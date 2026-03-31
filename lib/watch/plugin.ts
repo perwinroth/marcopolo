@@ -1,7 +1,12 @@
 import { registerPlugin } from '@capacitor/core';
 
 export interface WatchPluginInterface {
-    updateApplicationContext(options: { uid: string, token: string }): Promise<{ success: boolean }>;
+    updateApplicationContext(options: {
+        uid: string;
+        token: string;
+        refreshToken?: string;
+        apiKey?: string;
+    }): Promise<{ success: boolean }>;
     addListener(eventName: 'onWatchMessage', listenerFunc: (data: any) => void): Promise<any>;
 }
 

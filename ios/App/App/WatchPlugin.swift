@@ -16,7 +16,13 @@ public class WatchPlugin: CAPPlugin {
         }
         
         let session = WCSession.default
-        let payload: [String: Any] = ["uid": uid, "token": token]
+        var payload: [String: Any] = ["uid": uid, "token": token]
+        if let refreshToken = call.getString("refreshToken") {
+            payload["refreshToken"] = refreshToken
+        }
+        if let apiKey = call.getString("apiKey") {
+            payload["apiKey"] = apiKey
+        }
         
         // Push via all methods (WCSession is already activated by AppDelegate)
         if session.activationState == .activated {

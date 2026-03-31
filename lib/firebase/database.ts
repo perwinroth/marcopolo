@@ -9,7 +9,7 @@ import { database } from "./config";
 // Status types for Marco/Polo signals
 type GameStatus = "IDLE" | "MARCO" | "POLO" | "SOS" | "MARCO_SENT" | "MARCO_RECEIVED" | "POLO_SENT" | "POLO_RECEIVED" | "SOS_SENT" | "SOS_RECEIVED";
 import { Capacitor } from "@capacitor/core";
-import { getNativeAuthToken, normalizePhoneNumber, restDbGet, restDbQueryByChild, restDbSet, restDbUpdate } from "./auth";
+import { normalizePhoneNumber, restDbGet, restDbPush, restDbQueryByChild, restDbSet, restDbUpdate } from "./auth";
 import { notifyMarcoReceived, notifyPoloReceived, notifySOSReceived } from "./nativeNotifications";
 
 function isNative(): boolean { return Capacitor.isNativePlatform(); }
@@ -29,14 +29,7 @@ async function dbUpdate(path: string, data: any): Promise<void> {
     await update(ref(database, path), data);
 }
 async function dbPush(path: string, data: any): Promise<string> {
-    if (isNative()) {
-        const token = getNativeAuthToken();
-        const config = (database.app.options as any);
-        const url = `${config.databaseURL}/${path}.json?auth=${token}`;
-        const resp = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
-        if (!resp.ok) throw new Error(`DB PUSH failed: ${resp.status}`);
-        return (await resp.json()).name;
-    }
+    if (isNative()) return restDbPush(path, data);
     const newRef = push(ref(database, path));
     await set(newRef, data);
     return newRef.key!;

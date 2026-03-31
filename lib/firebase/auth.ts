@@ -70,7 +70,9 @@ type RefreshResult = {
 export function getNativeTokens() {
     return {
         uid: nativeUid,
-        idToken: nativeIdToken
+        idToken: nativeIdToken,
+        refreshToken: nativeRefreshToken,
+        apiKey: getApiKey(),
     };
 }
 
@@ -304,6 +306,20 @@ async function restDbUpdate(path: string, data: any): Promise<void> {
         const err = await resp.text();
         throw new Error(`DB UPDATE failed: ${resp.status} ${err}`);
     }
+}
+
+async function restDbPush(path: string, data: any): Promise<string> {
+    const dbUrl = getDatabaseUrl();
+    const resp = await fetchWithNativeAuthRetry(`${dbUrl}/${path}.json?auth=${nativeIdToken || ""}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+    });
+    if (!resp.ok) {
+        const err = await resp.text();
+        throw new Error(`DB PUSH failed: ${resp.status} ${err}`);
+    }
+    return (await resp.json()).name;
 }
 
 // ===== USER HELPERS =====
@@ -670,7 +686,7 @@ export function getNativeUid(): string | null {
     return nativeUid;
 }
 
-export { restDbGet, restDbSet, restDbUpdate };
+export { restDbGet, restDbSet, restDbUpdate, restDbPush };
 export { restDbQueryByChild };
 
 

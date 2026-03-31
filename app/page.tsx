@@ -11,10 +11,15 @@ export default function Home() {
     const [isLoading, setIsLoading] = useState(true);
     const [startupMessage, setStartupMessage] = useState("Opening Marco Polo");
 
-    const syncWatchCredentials = (uid: string, idToken: string) => {
+    const syncWatchCredentials = (uid: string, idToken: string, refreshToken?: string | null, apiKey?: string | null) => {
         void import("@/lib/watch/plugin")
             .then(({ default: WatchPlugin }) =>
-                WatchPlugin.updateApplicationContext({ uid, token: idToken })
+                WatchPlugin.updateApplicationContext({
+                    uid,
+                    token: idToken,
+                    refreshToken: refreshToken || undefined,
+                    apiKey: apiKey || undefined,
+                })
             )
             .then(() => console.log("⌚ Watch sync: credentials sent!"))
             .catch((error: unknown) => {
@@ -44,7 +49,7 @@ export default function Home() {
                         console.log("✅ Native session restored");
                         const tokens = getNativeTokens();
                         if (tokens.uid && tokens.idToken) {
-                            syncWatchCredentials(tokens.uid, tokens.idToken);
+                            syncWatchCredentials(tokens.uid, tokens.idToken, tokens.refreshToken, tokens.apiKey);
                         }
                         setUser(userData);
                     } else {
@@ -85,7 +90,7 @@ export default function Home() {
                     if (userData) {
                         const tokens = getNativeTokens();
                         if (tokens.uid && tokens.idToken) {
-                            syncWatchCredentials(tokens.uid, tokens.idToken);
+                            syncWatchCredentials(tokens.uid, tokens.idToken, tokens.refreshToken, tokens.apiKey);
                         }
                     }
                 } catch (e) {
@@ -113,7 +118,7 @@ export default function Home() {
         if (currentUser) {
             const tokens = getNativeTokens();
             if (tokens.uid && tokens.idToken) {
-                syncWatchCredentials(tokens.uid, tokens.idToken);
+                syncWatchCredentials(tokens.uid, tokens.idToken, tokens.refreshToken, tokens.apiKey);
             }
         }
     };
