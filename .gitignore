@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/functions/node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -16,6 +17,8 @@
 # next.js
 /.next/
 /out/
+/functions/lib/
+/public/firebase-messaging-sw.js
 
 # production
 /build
@@ -23,6 +26,12 @@
 # misc
 .DS_Store
 *.pem
+.agents/
+.firebase/
+.xcode-derived/
+artifacts/
+firebase-debug.log
+patch.swift
 
 # debug
 npm-debug.log*

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shape Animation Demo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0a; color: #fff; font-family: -apple-system, system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .container { display: flex; gap: 32px; flex-wrap: wrap; justify-content: center; padding: 20px; }
+  .card {
+    width: 200px; height: 280px; border-radius: 20px; background: #1a1a2e;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    position: relative; overflow: hidden; cursor: pointer; user-select: none;
+    border: 2px solid rgba(255,255,255,0.05); transition: all 0.3s;
+  }
+  .card:hover { border-color: rgba(255,255,255,0.15); }
+  .card.active { border-color: var(--color); box-shadow: 0 0 30px var(--color-glow); }
+  .shape { width: 80px; height: 80px; transition: all 0.3s; position: relative; }
+  .shape svg { width: 100%; height: 100%; }
+  .label { margin-top: 16px; font-size: 18px; font-weight: 600; }
+  .sublabel { margin-top: 4px; font-size: 12px; color: #888; }
+  .hint { font-size: 11px; color: #555; margin-top: 12px; }
+  .shape-container { position: relative; width: 80px; height: 80px; }
+  .fill-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+  h2 { text-align: center; width: 100%; margin-bottom: 10px; font-weight: 300; color: #666; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; }
+
+  @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.15); } }
+  @keyframes nudge { 
+    0%,100% { transform: rotate(0deg) translateX(0); } 
+    20% { transform: rotate(-8deg) translateX(-3px); }
+    40% { transform: rotate(8deg) translateX(3px); }
+    60% { transform: rotate(-4deg) translateX(-2px); }
+    80% { transform: rotate(4deg) translateX(2px); }
+  }
+  @keyframes fillUp { 0% { clip-path: inset(100% 0 0 0); } 100% { clip-path: inset(0 0 0 0); } }
+  @keyframes floatAway { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.5) translateY(-40px); opacity: 0; } }
+  @keyframes bloomIn { 0% { transform: scale(0); opacity: 0; } 50% { transform: scale(1.3); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+
+  .pulse { animation: pulse 1.2s ease-in-out infinite; }
+  .nudge-anim { animation: nudge 0.6s ease-in-out infinite; }
+  .fill-up { animation: fillUp 2s ease-out forwards; }
+  .float-away { animation: floatAway 0.8s ease-out forwards; }
+  .bloom { animation: bloomIn 0.6s ease-out forwards; }
+</style>
+</head>
+<body>
+<div style="text-align: center;">
+  <h2>Marco Polo — Shape Animation Preview (tap each to preview)</h2>
+  <div class="container">
+    <div>
+      <div class="card" style="--color: #e11d48; --color-glow: #e11d4840;" onclick="playDemo(this, 'heart')">
+        <div class="shape-container">
+          <svg class="shape" viewBox="0 0 24 24" fill="none" stroke="#e11d48" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
+          </svg>
+          <svg class="shape fill-overlay" viewBox="0 0 24 24" fill="#e11d48" stroke="#e11d48" stroke-width="2" style="clip-path: inset(100% 0 0 0); opacity: 0;">
+            <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
+          </svg>
+        </div>
+        <div class="label" style="color: #e11d48;">Heart</div>
+        <div class="sublabel">Classic love</div>
+        <div class="hint">Tap to preview</div>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="--color: #06b6d4; --color-glow: #06b6d440;" onclick="playDemo(this, 'circle')">
+        <div class="shape-container">
+          <svg class="shape" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+          </svg>
+          <svg class="shape fill-overlay" viewBox="0 0 24 24" fill="#06b6d4" stroke="#06b6d4" stroke-width="2" style="clip-path: inset(100% 0 0 0); opacity: 0;">
+            <circle cx="12" cy="12" r="10"/>
+          </svg>
+        </div>
+        <div class="label" style="color: #06b6d4;">Circle</div>
+        <div class="sublabel">Neutral friend</div>
+        <div class="hint">Tap to preview</div>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="--color: #f97316; --color-glow: #f9731640;" onclick="playDemo(this, 'finger')">
+        <div class="shape-container">
+          <svg class="shape" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/>
+            <path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/>
+            <path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/>
+            <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 13"/>
+          </svg>
+          <svg class="shape fill-overlay" viewBox="0 0 24 24" fill="#f97316" stroke="#f97316" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="clip-path: inset(100% 0 0 0); opacity: 0;">
+            <path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/>
+            <path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/>
+            <path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/>
+            <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 13"/>
+          </svg>
+        </div>
+        <div class="label" style="color: #f97316;">Nudge</div>
+        <div class="sublabel">Tap / poke</div>
+        <div class="hint">Tap to preview</div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+function playDemo(card, type) {
+  const outline = card.querySelector('.shape:not(.fill-overlay)');
+  const fill = card.querySelector('.fill-overlay');
+  outline.classList.remove('pulse', 'nudge-anim', 'float-away', 'bloom');
+  fill.style.opacity = '0';
+  fill.style.clipPath = 'inset(100% 0 0 0)';
+  fill.classList.remove('fill-up', 'float-away', 'bloom');
+  card.classList.remove('active');
+  card.classList.add('active');
+  if (type === 'finger') { outline.classList.add('nudge-anim'); } else { outline.classList.add('pulse'); }
+  setTimeout(() => { fill.style.opacity = '1'; fill.classList.add('fill-up'); }, 500);
+  setTimeout(() => {
+    outline.classList.remove('pulse', 'nudge-anim');
+    fill.classList.remove('fill-up'); fill.style.clipPath = 'inset(0 0 0 0)';
+    outline.classList.add('float-away'); fill.classList.add('float-away');
+  }, 2500);
+  setTimeout(() => {
+    outline.classList.remove('float-away'); fill.classList.remove('float-away');
+    fill.style.opacity = '1'; fill.style.clipPath = 'inset(0 0 0 0)';
+    outline.style.opacity = '0'; fill.classList.add('bloom');
+    card.querySelector('.sublabel').textContent = 'Connected 💙';
+  }, 3500);
+  setTimeout(() => {
+    outline.classList.remove('pulse', 'nudge-anim', 'float-away', 'bloom');
+    fill.classList.remove('fill-up', 'float-away', 'bloom');
+    outline.style.opacity = '1'; fill.style.opacity = '0';
+    fill.style.clipPath = 'inset(100% 0 0 0)';
+    card.classList.remove('active');
+    const subs = { heart: 'Classic love', circle: 'Neutral friend', finger: 'Tap / poke' };
+    card.querySelector('.sublabel').textContent = subs[type];
+  }, 5000);
+}
+</script>
+</body>
+</html>

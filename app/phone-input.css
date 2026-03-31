@@ -1,0 +1,83 @@
+/* Custom Phone Input Styles for Dark Mode */
+
+.PhoneInput {
+    display: flex;
+    align-items: center;
+}
+
+.PhoneInputCountry {
+    margin-right: 0.5rem;
+}
+
+.PhoneInputCountryIcon {
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 2px;
+    box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+}
+
+.PhoneInputCountrySelect {
+    background-color: transparent;
+    color: inherit;
+    border: none;
+    cursor: pointer;
+    opacity: 0;
+    /* Hide the select but keep it clickable over the icon */
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 100%;
+    z-index: 10;
+    appearance: none;
+}
+
+.PhoneInputInput {
+    background-color: transparent;
+    border: none;
+    color: inherit;
+    font-size: inherit;
+    font-family: inherit;
+    width: 100%;
+    outline: none;
+}
+
+.PhoneInputInput:focus {
+    outline: none;
+}
+
+.PhoneInputCountryIcon--border {
+    background-color: transparent;
+    box-shadow: none;
+    border: none;
+}
+
+.dark-phone-input .PhoneInput {
+    /* bg-slate-800 */
+    background-color: #1e293b;
+    /* border-slate-700 / 0.5 */
+    border-color: rgba(51, 65, 85, 0.5);
+    border-width: 1px;
+    border-style: solid;
+    border-radius: 1rem;
+    /* rounded-2xl */
+    padding: 1rem;
+    /* px-4 py-4 */
+    font-size: 1.125rem;
+    /* text-lg */
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    /* font-mono */
+    letter-spacing: 0.025em;
+    /* tracking-wide */
+    transition-property: all;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+    width: 100%;
+}
+
+.dark-phone-input:focus-within .PhoneInput {
+    /* ring-2 ring-teal-600/50 */
+    box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.5);
+    /* border-teal-600/50 */
+    border-color: rgba(13, 148, 136, 0.5);
+}

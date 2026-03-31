@@ -1,0 +1,70 @@
+{
+  "rules": {
+    "users": {
+      ".read": "auth != null && query.orderByChild == 'phoneNormalized' && query.equalTo != null",
+      ".indexOn": ["phone", "phoneNormalized", "email"],
+      "$uid": {
+        ".read": "auth != null && (auth.uid == $uid || root.child('connections').child(auth.uid).child($uid).exists() || root.child('connections').child($uid).child(auth.uid).exists())",
+        ".write": "auth != null && auth.uid == $uid",
+        "phone": {
+          ".validate": "newData.isString()"
+        },
+        "phoneNormalized": {
+          ".validate": "newData.isString()"
+        },
+        "email": {
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "displayName": {
+          ".validate": "newData.isString() && newData.val().length <= 100"
+        }
+      }
+    },
+    "recoveryRequests": {
+      ".read": "false",
+      ".write": "false"
+    },
+    "blocked": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        "$blockedUid": {
+          ".write": "auth != null && auth.uid == $uid"
+        }
+      }
+    },
+    "connections": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        "$friendUid": {
+          ".read": "auth != null && (auth.uid == $uid || auth.uid == $friendUid)",
+          ".write": "auth != null && (auth.uid == $uid || auth.uid == $friendUid)",
+          "phone": {
+            ".validate": "newData.isString()"
+          },
+          "displayName": {
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 100)"
+          },
+          "status": {
+            ".validate": "newData.isString()"
+          }
+        }
+      }
+    },
+    "friendRequests": {
+      ".indexOn": ["to", "from"],
+      "$requestId": {
+        ".read": "auth != null && (data.child('from').val() == auth.uid || data.child('to').val() == auth.uid || newData.child('from').val() == auth.uid || newData.child('to').val() == auth.uid)",
+        ".write": "auth != null && ((!data.exists() && newData.child('from').val() == auth.uid && newData.child('status').val() == 'pending') || (data.exists() && (data.child('from').val() == auth.uid || data.child('to').val() == auth.uid)))",
+        ".validate": "newData.hasChildren(['from', 'to', 'status'])"
+      }
+    },
+    "invitations": {
+      ".indexOn": ["token", "inviteePhoneHash", "inviterId"],
+      ".read": "(query.orderByChild == 'token' && query.equalTo != null) || (auth != null && query.orderByChild == 'inviterId' && query.equalTo == auth.uid) || (auth != null && query.orderByChild == 'inviteePhoneHash' && query.equalTo != null)",
+      "$invitationId": {
+        ".read": "auth != null && (data.child('inviterId').val() == auth.uid || data.child('acceptedBy').val() == auth.uid)",
+        ".write": "auth != null && ((!data.exists() && newData.child('inviterId').val() == auth.uid) || (data.exists() && data.child('inviterId').val() == auth.uid) || (data.exists() && data.child('status').val() == 'pending' && newData.child('status').val() == 'accepted' && newData.child('acceptedBy').val() == auth.uid))"
+      }
+    }
+  }
+}

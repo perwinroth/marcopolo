@@ -1,26 +1,232 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
+@theme {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  /* Earthy, calming dark mode */
+  --background: #0f172a;
+  /* Slate 900 - Deep, grounding night sky */
+  --foreground: #f8fafc;
+  /* Slate 50 - Soft white */
+
+  --primary: #0d9488;
+  /* Teal 600 - Calming, natural green-blue */
+  --primary-foreground: #ffffff;
+
+  --secondary: #1e293b;
+  /* Slate 800 - Soft dark grey */
+  --secondary-foreground: #f8fafc;
+
+  --accent: #2dd4bf;
+  /* Teal 400 - Gentle highlight */
+  --accent-foreground: #0f172a;
+
+  --destructive: #be123c;
+  /* Rose 700 - Muted warning */
+  --destructive-foreground: #ffffff;
+
+  --muted: #1e293b;
+  /* Slate 800 */
+  --muted-foreground: #94a3b8;
+  /* Slate 400 - Soft text */
+
+  --card: #1e293b;
+  /* Slate 800 */
+  --card-foreground: #f8fafc;
+
+  --border: #334155;
+  /* Slate 700 */
+  --input: #1e293b;
+  /* Slate 800 */
+  --ring: #2dd4bf;
+  /* Teal 400 */
+
+  --radius: 1rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Avenir Next", Avenir, "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Softer gentle pulse for connection signals */
+@keyframes breathe {
+  0% {
+    transform: scale(0.98);
+    opacity: 0.8;
+  }
+
+  50% {
+    transform: scale(1.02);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(0.98);
+    opacity: 0.8;
+  }
+}
+
+@keyframes gentle-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(13, 148, 136, 0.4);
+  }
+
+  70% {
+    box-shadow: 0 0 0 15px rgba(13, 148, 136, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(13, 148, 136, 0);
+  }
+}
+
+.animate-breathe {
+  animation: breathe 4s ease-in-out infinite;
+}
+
+/* Heart Animations */
+@keyframes suck-away {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+    filter: blur(0px);
+  }
+
+  35% {
+    transform: scale(1.15);
+    opacity: 0.9;
+    filter: blur(0px);
+  }
+
+  /* Gentle anticipation breath */
+  100% {
+    transform: scale(0.1) translateY(-30px);
+    opacity: 0;
+    filter: blur(10px);
+  }
+
+  /* Smooth fade into distance */
+}
+
+@keyframes bloom-in {
+  0% {
+    transform: scale(0.2);
+    opacity: 0;
+    filter: blur(12px);
+  }
+
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+    filter: blur(0px);
+  }
+
+  /* Soft overshoot */
+  100% {
+    transform: scale(1);
+    opacity: 1;
+    filter: blur(0px);
+  }
+}
+
+.animate-suck-away {
+  animation: suck-away 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  /* Custom ease-out for elegance */
+}
+
+.animate-bloom-in {
+  animation: bloom-in 1.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  /* Elastic/springy bloom */
+}
+/* New Hold-to-Send Heart Animations */
+
+/* Heart outline that appears when holding */
+@keyframes heart-outline-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.8;
+  }
+}
+
+/* Heart filling animation - fills from bottom to top */
+@keyframes heart-fill {
+  0% {
+    clip-path: inset(100% 0 0 0);
+  }
+  100% {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* Heart sent - floats away */
+@keyframes heart-float-away {
+  0% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.3) translateY(-50px);
+    opacity: 0;
+  }
+}
+
+.animate-heart-outline-pulse {
+  animation: heart-outline-pulse 1s ease-in-out infinite;
+}
+
+.animate-heart-fill {
+  animation: heart-fill 2s linear forwards;
+}
+
+.animate-heart-float-away {
+  animation: heart-float-away 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Nudge wiggle animation for hand shape */
+@keyframes nudge-wiggle {
+  0%, 100% { transform: rotate(0deg) translateX(0); }
+  15% { transform: rotate(-10deg) translateX(-4px); }
+  30% { transform: rotate(10deg) translateX(4px); }
+  45% { transform: rotate(-6deg) translateX(-3px); }
+  60% { transform: rotate(6deg) translateX(3px); }
+  75% { transform: rotate(-3deg) translateX(-1px); }
+  90% { transform: rotate(3deg) translateX(1px); }
+}
+
+.animate-nudge-wiggle {
+  animation: nudge-wiggle 0.7s ease-in-out infinite;
 }
