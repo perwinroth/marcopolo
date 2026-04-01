@@ -54,6 +54,30 @@ describe("contact picker", () => {
         });
     });
 
+    it("normalizes local contact numbers using the fallback country", async () => {
+        const { Capacitor } = await import("@capacitor/core");
+        const { CapacitorContacts } = await import("@capgo/capacitor-contacts");
+        vi.mocked(Capacitor.isNativePlatform).mockReturnValue(true);
+        vi.mocked(CapacitorContacts.checkPermissions).mockResolvedValue({ readContacts: "granted" } as never);
+        vi.mocked(CapacitorContacts.pickContacts).mockResolvedValue({
+            contacts: [
+                {
+                    fullName: "Jane Doe",
+                    phoneNumbers: [
+                        { type: "MOBILE", value: "070 999 88 77" },
+                    ],
+                },
+            ],
+        } as never);
+
+        const { pickContact } = await import("@/lib/contactPicker");
+
+        await expect(pickContact("SE")).resolves.toEqual({
+            name: "Jane Doe",
+            phone: "+46709998877",
+        });
+    });
+
     it("requests permission when needed and aborts if denied", async () => {
         const { Capacitor } = await import("@capacitor/core");
         const { CapacitorContacts } = await import("@capgo/capacitor-contacts");

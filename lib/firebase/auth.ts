@@ -244,8 +244,8 @@ async function fetchWithNativeAuthRetry(url: string, init?: RequestInit): Promis
 
     if ((resp.status === 401 || resp.status === 403) && nativeRefreshToken) {
         debugLog("DB-REST: auth failed, refreshing token and retrying...");
-        const refreshed = await refreshNativeIdToken();
-        if (refreshed) {
+        const refreshResult = await refreshNativeIdToken();
+        if (refreshResult.ok) {
             const retryUrl = url.replace(/([?&])auth=[^&]*/g, `$1auth=${nativeIdToken || ""}`);
             resp = await fetch(retryUrl, init);
         }
@@ -658,10 +658,18 @@ export async function signOut() {
     if (isNative()) {
         try {
             const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
-            await FirebaseAuthentication.signOut();
+            await Promise.race([
+                FirebaseAuthentication.signOut(),
+                new Promise((resolve) => setTimeout(resolve, 1500)),
+            ]);
         } catch (e) { /* ignore */ }
     }
-    try { await firebaseSignOut(auth); } catch (e) { /* ignore */ }
+    try {
+        await Promise.race([
+            firebaseSignOut(auth),
+            new Promise((resolve) => setTimeout(resolve, 1500)),
+        ]);
+    } catch (e) { /* ignore */ }
 }
 
 export function onAuthStateChanged(callback: (user: FirebaseUser | null) => void) {
@@ -688,6 +696,16 @@ export function getNativeUid(): string | null {
 
 export { restDbGet, restDbSet, restDbUpdate, restDbPush };
 export { restDbQueryByChild };
+export const __test__ = {
+    setNativeSession(tokens: { idToken: string | null; refreshToken: string | null; uid: string | null }) {
+        nativeIdToken = tokens.idToken;
+        nativeRefreshToken = tokens.refreshToken;
+        nativeUid = tokens.uid;
+    },
+    async refreshNativeIdToken() {
+        return refreshNativeIdToken();
+    },
+};
 
 
 export async function recoverAccountWithToken(token: string) {

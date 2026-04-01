@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useEffect } from "react";
-import { Settings, X, Mail, Download, Trash2, ExternalLink, User, Users, AlertTriangle, Heart, Circle } from "lucide-react";
+import { Settings, X, Mail, Download, Trash2, ExternalLink, User, Users, AlertTriangle, Heart, Circle, LogOut } from "lucide-react";
 import DeleteAccountModal from "./DeleteAccountModal";
 import Link from "next/link";
 import { exportUserData } from "@/lib/firebase/account";
@@ -20,6 +20,7 @@ interface SettingsModalProps {
   onSave: (marco: string, polo: string, recoveryEmail?: string, displayName?: string) => Promise<void>;
   onDeleteAccount?: () => Promise<void>; // Make optional to avoid errors if not passed
   onRemoveFriend?: (friendUid: string) => Promise<void>; // New prop
+  onLogout?: () => Promise<void>;
 }
 
 const MAX_LENGTH = 25;
@@ -35,7 +36,8 @@ export default function SettingsModal({
   friends = [],
   onSave,
   onDeleteAccount,
-  onRemoveFriend
+  onRemoveFriend,
+  onLogout,
 }: SettingsModalProps) {
   const [marco, setMarco] = useState(currentMarco || "Marco?");
   const [polo, setPolo] = useState(currentPolo || "Polo!");
@@ -315,8 +317,21 @@ export default function SettingsModal({
                 Delete Account
               </button>
           </div>
-          
-           <Link
+
+          {onLogout && (
+            <button
+              onClick={async () => {
+                await onLogout();
+                onClose();
+              }}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors text-sm font-medium"
+            >
+              <LogOut className="w-4 h-4" />
+              Log Out
+            </button>
+          )}
+
+          <Link
             href="/privacy"
             target="_blank"
             className="block text-center text-xs text-muted-foreground hover:text-foreground mt-4"

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const restDbGetMock = vi.fn();
 const restDbQueryByChildMock = vi.fn();
@@ -58,11 +58,16 @@ describe("database native friend requests", () => {
     beforeEach(() => {
         vi.resetModules();
         vi.restoreAllMocks();
+        vi.useRealTimers();
         restDbGetMock.mockReset();
         restDbQueryByChildMock.mockReset();
         restDbSetMock.mockReset();
         restDbUpdateMock.mockReset();
         restDbPushMock.mockReset();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
     });
 
     it("creates native friend requests through restDbPush", async () => {
@@ -117,5 +122,75 @@ describe("database native friend requests", () => {
             success: false,
             error: "DB PUSH failed: 401 Permission denied",
         });
+    });
+
+    it("rejects friend requests when the target user has blocked the sender", async () => {
+        restDbQueryByChildMock.mockResolvedValueOnce({
+            "target-user": {
+                phone: "+46709998877",
+                displayName: "Taylor",
+            },
+        });
+        restDbGetMock
+            .mockResolvedValueOnce({ displayName: "Alex" })
+            .mockResolvedValueOnce({ blockedAt: 123456 });
+
+        const { sendFriendRequest } = await import("@/lib/firebase/database");
+        const result = await sendFriendRequest("user-1", "+46701112233", "+46 70 999 88 77");
+
+        expect(result).toEqual({
+            success: false,
+            error: "Unable to send request",
+        });
+        expect(restDbGetMock).toHaveBeenCalledWith("blocked/target-user/user-1");
+    });
+
+    it("expires help statuses back to the prior Marco/Polo state", async () => {
+        vi.useFakeTimers();
+
+        const now = 1234567890;
+        const state: Record<string, any> = {
+            "connections/user-1": {
+                "friend-1": {
+                    phone: "+46709998877",
+                    displayName: "Taylor",
+                    status: "MARCO_RECEIVED",
+                    lastActionTime: now,
+                },
+            },
+            "connections/user-1/friend-1": { status: "MARCO_RECEIVED" },
+            "connections/friend-1/user-1": { status: "IDLE" },
+        };
+
+        restDbGetMock.mockImplementation(async (path: string) => state[path] ?? null);
+        restDbUpdateMock.mockImplementation(async (path: string, data: Record<string, unknown>) => {
+            state[path] = { ...(state[path] ?? {}), ...data };
+        });
+
+        const { HELP_STATUS_EXPIRY_MS, sendEmergencySOS } = await import("@/lib/firebase/database");
+        const result = await sendEmergencySOS("user-1");
+
+        expect(result).toEqual({ success: true });
+        expect(restDbUpdateMock).toHaveBeenCalledWith(
+            "connections/user-1/friend-1",
+            expect.objectContaining({ status: "SOS_SENT" })
+        );
+        expect(restDbUpdateMock).toHaveBeenCalledWith(
+            "connections/friend-1/user-1",
+            expect.objectContaining({ status: "SOS_RECEIVED" })
+        );
+
+        restDbUpdateMock.mockClear();
+
+        await vi.advanceTimersByTimeAsync(HELP_STATUS_EXPIRY_MS);
+
+        expect(restDbUpdateMock).toHaveBeenCalledWith(
+            "connections/user-1/friend-1",
+            { status: "MARCO_RECEIVED" }
+        );
+        expect(restDbUpdateMock).toHaveBeenCalledWith(
+            "connections/friend-1/user-1",
+            { status: "IDLE" }
+        );
     });
 });

@@ -5,7 +5,7 @@ import { UserPlus, X, Loader2, AlertCircle, MessageSquare, Contact } from "lucid
 import { pickContact, isContactPickerAvailable } from "@/lib/contactPicker";
 import { sendFriendRequest } from "@/lib/firebase/database";
 import { createInvitation } from "@/lib/firebase/invitations";
-import PhoneInput from 'react-phone-number-input';
+import PhoneInput, { parsePhoneNumber } from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 import "@/app/phone-input.css";
 
@@ -21,6 +21,14 @@ export default function AddFriendModal({ isOpen, onClose, userUid, userPhone }: 
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error" | "invite_needed" | "pending_reminder">("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [inviteLoading, setInviteLoading] = useState(false);
+
+  const fallbackCountry = (() => {
+    try {
+      return parsePhoneNumber(userPhone)?.country;
+    } catch {
+      return undefined;
+    }
+  })();
 
   if (!isOpen) return null;
 
@@ -155,7 +163,7 @@ export default function AddFriendModal({ isOpen, onClose, userUid, userPhone }: 
               <button
                 type="button"
                 onClick={async () => {
-                  const contact = await pickContact();
+                  const contact = await pickContact(fallbackCountry);
                   if (contact) {
                     setPhoneNumber(contact.phone);
                   }
@@ -175,7 +183,7 @@ export default function AddFriendModal({ isOpen, onClose, userUid, userPhone }: 
                   placeholder="Enter phone number"
                   value={phoneNumber}
                   onChange={setPhoneNumber}
-                  defaultCountry="SE"
+                  defaultCountry={fallbackCountry}
                   international
                   countryCallingCodeEditable={false}
                   className="w-full"

@@ -41,21 +41,7 @@ function AlertMonitor({ friends, userUid, customPolo }: { friends: Friend[], use
     return null;
 }
 
-export default function Dashboard({ user }: { user: User }) {
-    const [currentUser, setCurrentUser] = useState<User>(user);
-
-    useEffect(() => {
-        setCurrentUser(user);
-    }, [user]);
-
-    return (
-        <DashboardContent user={currentUser} setUser={(nextUser) => {
-            if (nextUser) setCurrentUser(nextUser);
-        }} />
-    );
-}
-
-function DashboardContent({ user, setUser }: { user: User, setUser: (u: User | null) => void }) {
+export default function Dashboard({ user, onSignedOut }: { user: User; onSignedOut: () => void }) {
     const [friends, setFriends] = useState<Friend[]>([]);
     const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
     const [loadingFriends, setLoadingFriends] = useState(true);
@@ -98,15 +84,15 @@ function DashboardContent({ user, setUser }: { user: User, setUser: (u: User | n
     };
 
     const handleLogout = async () => {
-        await signOut();
-        setUser(null);
+        onSignedOut();
         router.push("/");
+        await signOut();
     };
 
     const handleDeleteAccount = async () => {
         if (!user) return;
         await deleteAccount(user.uid);
-        setUser(null);
+        onSignedOut();
         router.push("/");
     };
 
@@ -122,7 +108,7 @@ function DashboardContent({ user, setUser }: { user: User, setUser: (u: User | n
             customPolo: polo,
             displayName: displayName || user.displayName, // Update display name
         };
-        setUser(updatedUser);
+        // Settings are optimistic in the current dashboard session only.
     };
 
     const handleRemoveFriend = async (friendUid: string) => {
@@ -157,7 +143,13 @@ function DashboardContent({ user, setUser }: { user: User, setUser: (u: User | n
 
             {/* Header */}
             <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border flex-none pt-[env(safe-area-inset-top)]">
-                <div className="max-w-md mx-auto px-4 h-16 flex items-center justify-between">
+                <div
+                    className="max-w-md mx-auto h-16 flex items-center justify-between"
+                    style={{
+                        paddingLeft: "calc(1rem + env(safe-area-inset-left))",
+                        paddingRight: "calc(1rem + env(safe-area-inset-right))",
+                    }}
+                >
                     <div className="flex items-center gap-2">
                         {/* Logo or Title */}
                         <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
@@ -168,19 +160,22 @@ function DashboardContent({ user, setUser }: { user: User, setUser: (u: User | n
                     <div className="flex items-center gap-2">
                         <button
                             onClick={() => setIsAddFriendOpen(true)}
-                            className="p-2 text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-muted"
+                            className="relative z-10 flex h-11 w-11 items-center justify-center text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-muted"
+                            aria-label="Add connection"
                         >
                             <UserPlus className="w-5 h-5" />
                         </button>
                         <button
                             onClick={() => setIsSettingsOpen(true)}
-                            className="p-2 text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-muted"
+                            className="relative z-10 flex h-11 w-11 items-center justify-center text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-muted"
+                            aria-label="Open settings"
                         >
                             <Settings className="w-5 h-5" />
                         </button>
                         <button
                             onClick={handleLogout}
-                            className="p-2 text-muted-foreground hover:text-destructive transition-colors rounded-full hover:bg-muted"
+                            className="relative z-10 flex h-11 w-11 items-center justify-center text-muted-foreground hover:text-destructive transition-colors rounded-full hover:bg-muted"
+                            aria-label="Log out"
                         >
                             <LogOut className="w-5 h-5" />
                         </button>
@@ -300,19 +295,20 @@ function DashboardContent({ user, setUser }: { user: User, setUser: (u: User | n
                 userPhone={user.phone || ""}
             />
 
-            <SettingsModal
-                isOpen={isSettingsOpen}
-                onClose={() => setIsSettingsOpen(false)}
-                currentMarco={user.customMarco}
-                currentPolo={user.customPolo}
+                <SettingsModal
+                    isOpen={isSettingsOpen}
+                    onClose={() => setIsSettingsOpen(false)}
+                    currentMarco={user.customMarco}
+                    currentPolo={user.customPolo}
                 currentRecoveryEmail={user.email}
                 currentDisplayName={user.displayName}
                 currentUserId={user.uid}
-                friends={friends}
-                onSave={handleSaveSettings}
-                onDeleteAccount={handleDeleteAccount}
-                onRemoveFriend={handleRemoveFriend}
-            />
+                    friends={friends}
+                    onSave={handleSaveSettings}
+                    onDeleteAccount={handleDeleteAccount}
+                    onRemoveFriend={handleRemoveFriend}
+                    onLogout={handleLogout}
+                />
         </div>
     );
 }

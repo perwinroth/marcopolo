@@ -1,17 +1,37 @@
 "use client";
 
 import { Capacitor } from "@capacitor/core";
+import { parsePhoneNumber } from "react-phone-number-input";
+import type { CountryCode } from "libphonenumber-js/core";
 
 export interface PickedContact {
     name: string;
     phone: string;
 }
 
+function normalizePickedPhoneNumber(phone: string, fallbackCountry?: CountryCode): string | null {
+    const cleanedPhone = phone.replace(/[^\d+]/g, "");
+
+    try {
+        // Picker values are often local-format numbers. They must be lifted to
+        // international format before lookup or native add-contact will miss
+        // real users whose stored phoneNormalized value includes country code.
+        const parsed = parsePhoneNumber(cleanedPhone, fallbackCountry);
+        if (parsed?.number) {
+            return parsed.number;
+        }
+    } catch {
+        // Fall through to raw cleaned value below.
+    }
+
+    return cleanedPhone || null;
+}
+
 /**
  * Opens the native iOS contact picker and returns the selected contact's
  * name and phone number. Returns null on web or if user cancels.
  */
-export async function pickContact(): Promise<PickedContact | null> {
+export async function pickContact(fallbackCountry?: CountryCode): Promise<PickedContact | null> {
     // Only available on native platforms
     if (!Capacitor.isNativePlatform()) {
         return null;
@@ -62,10 +82,12 @@ export async function pickContact(): Promise<PickedContact | null> {
         const mobilePhone = contact.phoneNumbers.find(p => p.type === "MOBILE");
         const phone = (mobilePhone || contact.phoneNumbers[0]).value;
 
-        // Clean up phone number — remove spaces, dashes, parens
-        const cleanPhone = phone.replace(/[\s\-\(\)]/g, "");
+        const normalizedPhone = normalizePickedPhoneNumber(phone, fallbackCountry);
+        if (!normalizedPhone) {
+            return null;
+        }
 
-        return { name, phone: cleanPhone };
+        return { name, phone: normalizedPhone };
     } catch (error) {
         console.warn("📇 Contact picker error:", error);
         return null;

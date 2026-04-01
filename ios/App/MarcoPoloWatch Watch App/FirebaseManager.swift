@@ -312,6 +312,7 @@ class FirebaseManager: ObservableObject {
     
     func sendHelpRequest() {
         guard let uid = uid, let token = token else { return }
+        let helpExpirySeconds: TimeInterval = 30
         
         // Fetch connections first
         let urlString = "\(databaseURL)/connections/\(uid).json?auth=\(token)"
@@ -322,13 +323,41 @@ class FirebaseManager: ObservableObject {
                   let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
             
             var updates: [String: Any] = [:]
+            var previousStatuses: [(friendId: String, myStatus: String, theirStatus: String)] = []
             
-            for fid in dict.keys {
+            for (fid, rawValue) in dict {
+                let myConnection = rawValue as? [String: Any]
+                let myPreviousStatus = myConnection?["status"] as? String ?? "IDLE"
+                let theirPreviousStatus = self.fetchConnectionStatus(ownerId: fid, friendId: uid, token: token) ?? "IDLE"
+
                 updates["connections/\(uid)/\(fid)/status"] = "SOS_SENT"
+                updates["connections/\(uid)/\(fid)/lastActionTime"] = Int(Date().timeIntervalSince1970 * 1000)
                 updates["connections/\(fid)/\(uid)/status"] = "SOS_RECEIVED"
+                updates["connections/\(fid)/\(uid)/lastActionTime"] = Int(Date().timeIntervalSince1970 * 1000)
+                previousStatuses.append((friendId: fid, myStatus: myPreviousStatus, theirStatus: theirPreviousStatus))
             }
             
             self.performPatch(updates: updates, token: token)
+
+            DispatchQueue.global().asyncAfter(deadline: .now() + helpExpirySeconds) {
+                var restoreUpdates: [String: Any] = [:]
+
+                for previous in previousStatuses {
+                    let myCurrentStatus = self.fetchConnectionStatus(ownerId: uid, friendId: previous.friendId, token: token)
+                    if myCurrentStatus == "SOS_SENT" {
+                        restoreUpdates["connections/\(uid)/\(previous.friendId)/status"] = previous.myStatus
+                    }
+
+                    let theirCurrentStatus = self.fetchConnectionStatus(ownerId: previous.friendId, friendId: uid, token: token)
+                    if theirCurrentStatus == "SOS_RECEIVED" {
+                        restoreUpdates["connections/\(previous.friendId)/\(uid)/status"] = previous.theirStatus
+                    }
+                }
+
+                if !restoreUpdates.isEmpty {
+                    self.performPatch(updates: restoreUpdates, token: token)
+                }
+            }
         }.resume()
     }
     
@@ -350,5 +379,27 @@ class FirebaseManager: ObservableObject {
                 self.fetchFriends()
             }
         }.resume()
+    }
+
+    private func fetchConnectionStatus(ownerId: String, friendId: String, token: String) -> String? {
+        guard let url = URL(string: "\(databaseURL)/connections/\(ownerId)/\(friendId)/status.json?auth=\(token)") else {
+            return nil
+        }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var status: String?
+
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            defer { semaphore.signal() }
+
+            guard let data = data else { return }
+
+            if let decodedStatus = try? JSONDecoder().decode(String.self, from: data) {
+                status = decodedStatus
+            }
+        }.resume()
+
+        _ = semaphore.wait(timeout: .now() + 5)
+        return status
     }
 }

@@ -13,6 +13,7 @@ import { normalizePhoneNumber, restDbGet, restDbPush, restDbQueryByChild, restDb
 import { notifyMarcoReceived, notifyPoloReceived, notifySOSReceived } from "./nativeNotifications";
 
 function isNative(): boolean { return Capacitor.isNativePlatform(); }
+export const HELP_STATUS_EXPIRY_MS = 30000;
 
 // Dual-mode DB helpers
 async function dbGet(path: string): Promise<any> {
@@ -309,7 +310,7 @@ export async function sendEmergencySOS(uid: string) {
                 savedStatuses.push({ fid: friend.id, myStatus: myPrevStatus, theirStatus: theirPrevStatus });
             }
         }
-        // Auto-restore previous statuses after 30 seconds (not IDLE — preserve Marco/Polo)
+        // Help is temporary. Restore the prior Marco/Polo state if nothing else changed.
         setTimeout(async () => {
             for (const { fid, myStatus, theirStatus } of savedStatuses) {
                 try {
@@ -324,7 +325,7 @@ export async function sendEmergencySOS(uid: string) {
                     }
                 } catch {}
             }
-        }, 30000);
+        }, HELP_STATUS_EXPIRY_MS);
         return { success: true };
     } catch (error: any) { return { success: false, error: error.message }; }
 }

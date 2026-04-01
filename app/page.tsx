@@ -150,5 +150,5 @@ export default function Home() {
         return <LoginScreen onLogin={checkUser} />;
     }
 
-    return <Dashboard user={user} />;
+    return <Dashboard user={user} onSignedOut={() => setUser(null)} />;
 }
