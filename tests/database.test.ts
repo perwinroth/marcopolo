@@ -193,4 +193,76 @@ describe("database native friend requests", () => {
             { status: "IDLE" }
         );
     });
+
+    it("subscribes to pending requests on native and emits new requests", async () => {
+        vi.useFakeTimers();
+        restDbQueryByChildMock.mockResolvedValue({
+            "request-1": {
+                from: "user-2",
+                fromPhone: "+46701112233",
+                to: "user-1",
+                toPhone: "+46709998877",
+                status: "pending",
+                createdAt: 123,
+            },
+            "request-2": {
+                from: "user-3",
+                fromPhone: "+46702223344",
+                to: "user-1",
+                toPhone: "+46709998877",
+                status: "accepted",
+                createdAt: 456,
+            },
+        });
+
+        const callback = vi.fn();
+        const { subscribeToPendingRequests } = await import("@/lib/firebase/database");
+
+        const unsubscribe = subscribeToPendingRequests("user-1", callback);
+        await vi.runOnlyPendingTimersAsync();
+
+        expect(restDbQueryByChildMock).toHaveBeenCalledWith("friendRequests", "to", "user-1");
+        expect(callback).toHaveBeenCalledWith([
+            expect.objectContaining({
+                id: "request-1",
+                from: "user-2",
+                status: "pending",
+            }),
+        ]);
+
+        unsubscribe();
+    });
+
+    it("gets only pending incoming requests on native", async () => {
+        restDbQueryByChildMock.mockResolvedValue({
+            "request-1": {
+                from: "user-2",
+                fromPhone: "+46701112233",
+                to: "user-1",
+                toPhone: "+46709998877",
+                status: "pending",
+                createdAt: 123,
+            },
+            "request-2": {
+                from: "user-3",
+                fromPhone: "+46702223344",
+                to: "user-1",
+                toPhone: "+46709998877",
+                status: "rejected",
+                createdAt: 456,
+            },
+        });
+
+        const { getPendingRequests } = await import("@/lib/firebase/database");
+        const result = await getPendingRequests("user-1");
+
+        expect(restDbQueryByChildMock).toHaveBeenCalledWith("friendRequests", "to", "user-1");
+        expect(result).toEqual([
+            expect.objectContaining({
+                id: "request-1",
+                from: "user-2",
+                status: "pending",
+            }),
+        ]);
+    });
 });

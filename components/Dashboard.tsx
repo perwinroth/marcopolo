@@ -7,7 +7,7 @@ import { initNativeNotifications } from "@/lib/firebase/nativeNotifications";
 import AddFriendModal from "./AddFriendModal";
 import FriendCard from "./FriendCard";
 import SettingsModal from "./SettingsModal";
-import { Friend, getConnections, subscribeToConnections, updateCustomMessages, getPendingRequests, acceptFriendRequest, rejectFriendRequest, FriendRequest, sendEmergencySOS, removeConnection } from "@/lib/firebase/database";
+import { Friend, subscribeToConnections, subscribeToPendingRequests, updateCustomMessages, acceptFriendRequest, rejectFriendRequest, FriendRequest, sendEmergencySOS, removeConnection } from "@/lib/firebase/database";
 import { Settings, LogOut, Plus, UserPlus, Users, Bell, HandHelping, RefreshCw, Loader2 } from "lucide-react";
 import FriendRequestNotification from "./FriendRequestNotification";
 import NotificationPermissionBanner from "./NotificationPermissionBanner";
@@ -68,20 +68,16 @@ export default function Dashboard({ user, onSignedOut }: { user: User; onSignedO
         // (Watch actions now handled natively by standalone WatchOS app)
         const watchListener: any = null;
 
-        // Initial fetch of pending requests
-        loadPendingRequests();
+        const unsubscribePendingRequests = subscribeToPendingRequests(user.uid, (requests) => {
+            setFriendRequests(requests);
+        });
 
         return () => {
             unsubscribe();
+            unsubscribePendingRequests();
             if (watchListener) watchListener.remove();
         };
     }, [user]);
-
-    const loadPendingRequests = async () => {
-        if (!user) return;
-        const requests = await getPendingRequests(user.uid);
-        setFriendRequests(requests);
-    };
 
     const handleLogout = async () => {
         onSignedOut();
@@ -118,12 +114,10 @@ export default function Dashboard({ user, onSignedOut }: { user: User; onSignedO
 
     const handleAcceptRequest = async (requestId: string) => {
         await acceptFriendRequest(requestId);
-        loadPendingRequests(); // Reload requests
     };
 
     const handleRejectRequest = async (requestId: string) => {
         await rejectFriendRequest(requestId);
-        loadPendingRequests(); // Reload requests
     };
 
     const handleHelp = async () => {

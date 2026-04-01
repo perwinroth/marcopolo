@@ -176,6 +176,46 @@ export async function getPendingRequests(uid: string): Promise<FriendRequest[]> 
     } catch (error: any) { console.error("Error getting pending requests:", error); return []; }
 }
 
+export function subscribeToPendingRequests(uid: string, callback: (requests: FriendRequest[]) => void): Unsubscribe {
+    if (isNative()) {
+        let active = true;
+        (async () => {
+            while (active) {
+                try {
+                    const data = await restDbQueryByChild("friendRequests", "to", uid);
+                    const requests: FriendRequest[] = [];
+                    if (data) {
+                        for (const [key, val] of Object.entries(data as Record<string, any>)) {
+                            if (val.to === uid && val.status === "pending") {
+                                requests.push({ id: key, ...val });
+                            }
+                        }
+                    }
+                    if (active) callback(requests);
+                } catch (error) {
+                    console.error("Pending requests poll error:", error);
+                }
+                await new Promise((resolve) => setTimeout(resolve, 5000));
+            }
+        })();
+        return () => { active = false; };
+    }
+
+    const requestsQuery = query(ref(database, "friendRequests"), orderByChild("to"), equalTo(uid));
+    const unsubscribe = onValue(requestsQuery, (snapshot) => {
+        const requests: FriendRequest[] = [];
+        snapshot.forEach((child) => {
+            const data = child.val();
+            if (data.status === "pending") {
+                requests.push({ id: child.key as string, ...data });
+            }
+        });
+        callback(requests);
+    });
+
+    return () => off(requestsQuery, "value", unsubscribe);
+}
+
 export async function acceptFriendRequest(requestId: string) {
     try {
         const request = await dbGet(`friendRequests/${requestId}`);
