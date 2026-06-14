@@ -5,12 +5,36 @@
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications, Token } from "@capacitor/push-notifications";
 import { callFunction } from "./functions";
+import { playIncomingSignalHaptic } from "../haptics";
+import { playSignalHaptics, type SignalPlaybackState } from "../signalAudio";
+import type { SignalType } from "../signals";
 
 let notificationsInitialized = false;
 let notificationIdCounter = 1;
 let pushRegistrationStarted = false;
 let pushRegistrationComplete = false;
 let pushListenerInstalled = false;
+
+function normalizeSignalType(raw: unknown): SignalType | null {
+    const signal = String(raw || "").toLowerCase();
+    if (signal === "finger") {
+        return "hand";
+    }
+    if (signal === "heart" || signal === "wind" || signal === "fist" || signal === "hand" || signal === "sphere" || signal === "eye") {
+        return signal;
+    }
+    return null;
+}
+
+function normalizeSignalState(type: string, raw: unknown): SignalPlaybackState | null {
+    const state = String(raw || "").toLowerCase();
+    if (state === "marco-sent" || state === "marco-received" || state === "polo-sent") {
+        return state;
+    }
+    if (type === "marco") return "marco-received";
+    if (type === "polo") return "polo-sent";
+    return null;
+}
 
 async function getLocalNotifications() {
     const { LocalNotifications } = await import("@capacitor/local-notifications");
@@ -42,6 +66,23 @@ function installPushListeners() {
 
     void PushNotifications.addListener("registrationError", (error) => {
         console.error("Native push registration error:", error);
+    });
+
+    void PushNotifications.addListener("pushNotificationReceived", (notification) => {
+        const type = String(notification.data?.type || "").toLowerCase();
+        const signalType = normalizeSignalType(notification.data?.signalType);
+        const signalState = normalizeSignalState(type, notification.data?.signalState);
+        if (signalType && signalState) {
+            void playSignalHaptics(signalType, signalState);
+            return;
+        }
+        if (type === "marco") {
+            void playIncomingSignalHaptic("marco");
+        } else if (type === "polo") {
+            void playIncomingSignalHaptic("polo");
+        } else if (type === "sos") {
+            void playIncomingSignalHaptic("help");
+        }
     });
 }
 
@@ -111,6 +152,7 @@ export async function notifyMarcoReceived(fromName: string) {
                 largeIcon: "ic_notification",
             }]
         });
+        await playIncomingSignalHaptic("marco");
     } catch (error) {
         console.error("Error sending Marco notification:", error);
     }
@@ -134,6 +176,7 @@ export async function notifyPoloReceived(fromName: string) {
                 largeIcon: "ic_notification",
             }]
         });
+        await playIncomingSignalHaptic("polo");
     } catch (error) {
         console.error("Error sending Polo notification:", error);
     }
@@ -160,18 +203,7 @@ export async function notifySOSReceived(fromName: string) {
             }]
         });
 
-        // Also trigger haptics for urgency
-        try {
-            const { Haptics, ImpactStyle } = await import("@capacitor/haptics");
-            // Triple heavy impact for help requests
-            await Haptics.impact({ style: ImpactStyle.Heavy });
-            setTimeout(async () => {
-                await Haptics.impact({ style: ImpactStyle.Heavy });
-                setTimeout(async () => {
-                    await Haptics.impact({ style: ImpactStyle.Heavy });
-                }, 200);
-            }, 200);
-        } catch { /* haptics optional */ }
+        await playIncomingSignalHaptic("help");
     } catch (error) {
         console.error("Error sending help notification:", error);
     }

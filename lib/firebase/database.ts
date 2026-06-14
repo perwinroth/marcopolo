@@ -11,9 +11,12 @@ type GameStatus = "IDLE" | "MARCO" | "POLO" | "SOS" | "MARCO_SENT" | "MARCO_RECE
 import { Capacitor } from "@capacitor/core";
 import { normalizePhoneNumber, restDbGet, restDbPush, restDbQueryByChild, restDbSet, restDbUpdate } from "./auth";
 import { notifyMarcoReceived, notifyPoloReceived, notifySOSReceived } from "./nativeNotifications";
+import { DEFAULT_SIGNAL_COLOR, DEFAULT_SIGNAL_TYPE, mapLegacyShapeToSignal, type SignalType } from "../signals";
 
 function isNative(): boolean { return Capacitor.isNativePlatform(); }
 export const HELP_STATUS_EXPIRY_MS = 30000;
+export const DEBUG_SELF_TEST_PHONE = "46760366102";
+export const DEBUG_SELF_TEST_UID = "__debug_self_test__";
 
 // Dual-mode DB helpers
 async function dbGet(path: string): Promise<any> {
@@ -39,12 +42,24 @@ async function dbPush(path: string, data: any): Promise<string> {
 export interface Friend {
     id?: string; phone: string; status: GameStatus; lastActionTime: number;
     customMarco?: string; customPolo?: string; displayName?: string;
-    theme?: { heartColor: string; nameColor: string; iconShape?: string; }
+    theme?: { heartColor: string; nameColor: string; iconShape?: string; signalType?: SignalType; signalColor?: string; }
     heartColor: string; nameColor: string;
 }
 export interface FriendRequest {
     id: string; from: string; fromPhone: string; to: string; toPhone: string;
     status: "pending" | "accepted" | "rejected"; createdAt: number;
+}
+
+function dedupePendingRequests(requests: FriendRequest[]): FriendRequest[] {
+    const latestByPair = new Map<string, FriendRequest>();
+    for (const request of requests) {
+        const key = `${request.from}:${request.to}`;
+        const existing = latestByPair.get(key);
+        if (!existing || request.createdAt > existing.createdAt) {
+            latestByPair.set(key, request);
+        }
+    }
+    return Array.from(latestByPair.values());
 }
 
 function arePhoneNumbersEquivalent(p1: string, p2: string): boolean {
@@ -122,7 +137,8 @@ export async function sendFriendRequest(fromUid: string, fromPhone: string, toPh
         if (existingRequests.some((request) => request.to === toUid && request.status === "pending")) {
             return { success: false, error: "Request already pending" };
         }
-        await dbPush("friendRequests", {
+        const requestId = `${fromUid}_${toUid}`;
+        await dbSet(`friendRequests/${requestId}`, {
             from: fromUid,
             fromPhone,
             fromDisplayName,
@@ -144,7 +160,7 @@ async function getPendingRequestsBySender(uid: string): Promise<FriendRequest[]>
             if (data) for (const [key, val] of Object.entries(data as Record<string, any>)) {
                 if (val.status === "pending") requests.push({ id: key, ...val });
             }
-            return requests;
+            return dedupePendingRequests(requests);
         }
 
         const snapshot = await get(query(ref(database, "friendRequests"), orderByChild("from"), equalTo(uid)));
@@ -153,7 +169,7 @@ async function getPendingRequestsBySender(uid: string): Promise<FriendRequest[]>
             const d = c.val();
             if (d.status === "pending") requests.push({ id: c.key as string, ...d });
         });
-        return requests;
+        return dedupePendingRequests(requests);
     } catch {
         return [];
     }
@@ -167,12 +183,12 @@ export async function getPendingRequests(uid: string): Promise<FriendRequest[]> 
             if (data) for (const [key, val] of Object.entries(data as Record<string, any>)) {
                 if (val.to === uid && val.status === "pending") requests.push({ id: key, ...val });
             }
-            return requests;
+            return dedupePendingRequests(requests);
         }
         const snapshot = await get(query(ref(database, "friendRequests"), orderByChild("to"), equalTo(uid)));
         const requests: FriendRequest[] = [];
         snapshot.forEach((c) => { const d = c.val(); if (d.status === "pending") requests.push({ id: c.key as string, ...d }); });
-        return requests;
+        return dedupePendingRequests(requests);
     } catch (error: any) { console.error("Error getting pending requests:", error); return []; }
 }
 
@@ -191,7 +207,7 @@ export function subscribeToPendingRequests(uid: string, callback: (requests: Fri
                             }
                         }
                     }
-                    if (active) callback(requests);
+                    if (active) callback(dedupePendingRequests(requests));
                 } catch (error) {
                     console.error("Pending requests poll error:", error);
                 }
@@ -210,7 +226,7 @@ export function subscribeToPendingRequests(uid: string, callback: (requests: Fri
                 requests.push({ id: child.key as string, ...data });
             }
         });
-        callback(requests);
+        callback(dedupePendingRequests(requests));
     });
 
     return () => off(requestsQuery, "value", unsubscribe);
@@ -220,18 +236,31 @@ export async function acceptFriendRequest(requestId: string) {
     try {
         const request = await dbGet(`friendRequests/${requestId}`);
         if (!request) return { success: false, error: "Request not found" };
+        const defaultTheme = {
+            heartColor: DEFAULT_SIGNAL_COLOR,
+            nameColor: DEFAULT_SIGNAL_COLOR,
+            iconShape: "hand",
+            signalType: DEFAULT_SIGNAL_TYPE,
+            signalColor: DEFAULT_SIGNAL_COLOR,
+        };
         await dbUpdate(`friendRequests/${requestId}`, { status: "accepted" });
         await dbSet(`connections/${request.from}/${request.to}`, {
             phone: request.toPhone,
             displayName: request.toDisplayName || request.toPhone,
             status: "IDLE",
             lastActionTime: Date.now(),
+            customMarco: "Marco?",
+            customPolo: "Polo!",
+            theme: defaultTheme,
         });
         await dbSet(`connections/${request.to}/${request.from}`, {
             phone: request.fromPhone,
             displayName: request.fromDisplayName || request.fromPhone,
             status: "IDLE",
             lastActionTime: Date.now(),
+            customMarco: "Marco?",
+            customPolo: "Polo!",
+            theme: defaultTheme,
         });
         return { success: true };
     } catch (error: any) { return { success: false, error: error.message }; }
@@ -265,7 +294,20 @@ export function subscribeToConnections(uid: string, callback: (friends: Friend[]
                                 else if (u?.name) dn = u.name;
                             } catch { }
                         }
-                        friends.push({ id: fuid, ...val, phone: val.phone || "Unknown", displayName: dn, theme: val.theme });
+                        const theme = val.theme || {};
+                        friends.push({
+                            id: fuid,
+                            ...val,
+                            phone: val.phone || "Unknown",
+                            displayName: dn,
+                            theme: {
+                                ...theme,
+                                signalType: theme.signalType || mapLegacyShapeToSignal(theme.iconShape),
+                                signalColor: theme.signalColor || theme.heartColor || DEFAULT_SIGNAL_COLOR,
+                                heartColor: theme.heartColor || theme.signalColor || DEFAULT_SIGNAL_COLOR,
+                                nameColor: theme.nameColor || theme.signalColor || theme.heartColor || DEFAULT_SIGNAL_COLOR,
+                            },
+                        });
                     }
                     if (active) callback(friends);
                 } catch (e) { console.error("Poll error:", e); }
@@ -291,7 +333,20 @@ export function subscribeToConnections(uid: string, callback: (friends: Friend[]
                         }
                     } catch { }
                 }
-                return { id: fuid, ...val, phone: val.phone || "Unknown", displayName: dn, theme: val.theme };
+                const theme = val.theme || {};
+                return {
+                    id: fuid,
+                    ...val,
+                    phone: val.phone || "Unknown",
+                    displayName: dn,
+                    theme: {
+                        ...theme,
+                        signalType: theme.signalType || mapLegacyShapeToSignal(theme.iconShape),
+                        signalColor: theme.signalColor || theme.heartColor || DEFAULT_SIGNAL_COLOR,
+                        heartColor: theme.heartColor || theme.signalColor || DEFAULT_SIGNAL_COLOR,
+                        nameColor: theme.nameColor || theme.signalColor || theme.heartColor || DEFAULT_SIGNAL_COLOR,
+                    },
+                };
             }));
             friends.push(...resolved.filter(f => f !== null));
         }
@@ -380,8 +435,24 @@ export async function updateCustomMessages(uid: string, marco: string, polo: str
     } catch (error: any) { return { success: false, error: error.message }; }
 }
 
-export async function updateFriendTheme(myUid: string, friendUid: string, theme: { heartColor: string, nameColor: string, iconShape?: string }) {
-    try { await dbUpdate(`connections/${myUid}/${friendUid}`, { theme }); return { success: true }; }
+export async function updateFriendCardSettings(
+    myUid: string,
+    friendUid: string,
+    settings: {
+        theme?: { heartColor: string; nameColor: string; iconShape?: string; signalType?: SignalType; signalColor?: string };
+        customMarco?: string;
+        customPolo?: string;
+    }
+) {
+    try {
+        const updates: Record<string, unknown> = {};
+        if (settings.theme) updates.theme = settings.theme;
+        if (settings.customMarco !== undefined) updates.customMarco = settings.customMarco;
+        if (settings.customPolo !== undefined) updates.customPolo = settings.customPolo;
+        await dbUpdate(`connections/${myUid}/${friendUid}`, updates);
+        await dbUpdate(`connections/${friendUid}/${myUid}`, updates);
+        return { success: true };
+    }
     catch (error: any) { return { success: false, error: error.message }; }
 }
 
@@ -393,4 +464,78 @@ export async function removeConnection(myUid: string, friendUid: string) {
 export async function updateUserName(uid: string, name: string) {
     try { await dbUpdate(`users/${uid}`, { displayName: name }); return { success: true }; }
     catch (error: any) { return { success: false, error: error.message }; }
+}
+
+function makeDebugSelfTestTheme() {
+    return {
+        heartColor: DEFAULT_SIGNAL_COLOR,
+        nameColor: DEFAULT_SIGNAL_COLOR,
+        signalType: DEFAULT_SIGNAL_TYPE,
+        signalColor: DEFAULT_SIGNAL_COLOR,
+    };
+}
+
+export async function ensureDebugSelfTestConnection(uid: string) {
+    const theme = makeDebugSelfTestTheme();
+    const fakeConnection = {
+        phone: "+46700000000",
+        displayName: "Self Test",
+        status: "IDLE" as GameStatus,
+        lastActionTime: Date.now(),
+        customMarco: "Marco?",
+        customPolo: "Polo!",
+        theme,
+    };
+
+    await dbSet(`connections/${uid}/${DEBUG_SELF_TEST_UID}`, fakeConnection);
+    await dbSet(`connections/${DEBUG_SELF_TEST_UID}/${uid}`, {
+        ...fakeConnection,
+        phone: "",
+        displayName: "You",
+    });
+    return { success: true };
+}
+
+export async function resetDebugSelfTestConnection(uid: string) {
+    await ensureDebugSelfTestConnection(uid);
+    await dbUpdate(`connections/${uid}/${DEBUG_SELF_TEST_UID}`, {
+        status: "IDLE",
+        lastActionTime: Date.now(),
+    });
+    await dbUpdate(`connections/${DEBUG_SELF_TEST_UID}/${uid}`, {
+        status: "IDLE",
+        lastActionTime: Date.now(),
+    });
+    return { success: true };
+}
+
+export async function triggerDebugSelfTestMarco(uid: string) {
+    await ensureDebugSelfTestConnection(uid);
+    await dbUpdate(`connections/${uid}/${DEBUG_SELF_TEST_UID}`, {
+        status: "MARCO_RECEIVED",
+        lastActionTime: Date.now(),
+    });
+    await dbUpdate(`connections/${DEBUG_SELF_TEST_UID}/${uid}`, {
+        status: "MARCO_SENT",
+        lastActionTime: Date.now(),
+    });
+    return { success: true };
+}
+
+export async function triggerDebugSelfTestPolo(uid: string) {
+    await ensureDebugSelfTestConnection(uid);
+    await dbUpdate(`connections/${uid}/${DEBUG_SELF_TEST_UID}`, {
+        status: "POLO_RECEIVED",
+        lastActionTime: Date.now(),
+    });
+    await dbUpdate(`connections/${DEBUG_SELF_TEST_UID}/${uid}`, {
+        status: "IDLE",
+        lastActionTime: Date.now(),
+    });
+    setTimeout(async () => {
+        try {
+            await dbUpdate(`connections/${uid}/${DEBUG_SELF_TEST_UID}`, { status: "IDLE" });
+        } catch {}
+    }, 4000);
+    return { success: true };
 }

@@ -4,7 +4,6 @@ const restDbGetMock = vi.fn();
 const restDbQueryByChildMock = vi.fn();
 const restDbSetMock = vi.fn();
 const restDbUpdateMock = vi.fn();
-const restDbPushMock = vi.fn();
 
 vi.mock("@capacitor/core", () => ({
     Capacitor: {
@@ -51,7 +50,7 @@ vi.mock("@/lib/firebase/auth", () => ({
     restDbQueryByChild: restDbQueryByChildMock,
     restDbSet: restDbSetMock,
     restDbUpdate: restDbUpdateMock,
-    restDbPush: restDbPushMock,
+    restDbPush: vi.fn(),
 }));
 
 describe("database native friend requests", () => {
@@ -59,18 +58,17 @@ describe("database native friend requests", () => {
         vi.resetModules();
         vi.restoreAllMocks();
         vi.useRealTimers();
-        restDbGetMock.mockReset();
-        restDbQueryByChildMock.mockReset();
-        restDbSetMock.mockReset();
-        restDbUpdateMock.mockReset();
-        restDbPushMock.mockReset();
-    });
+    restDbGetMock.mockReset();
+    restDbQueryByChildMock.mockReset();
+    restDbSetMock.mockReset();
+    restDbUpdateMock.mockReset();
+});
 
     afterEach(() => {
         vi.useRealTimers();
     });
 
-    it("creates native friend requests through restDbPush", async () => {
+    it("creates native friend requests through a deterministic request id", async () => {
         restDbQueryByChildMock.mockResolvedValueOnce({
             "target-user": {
                 phone: "+46709998877",
@@ -82,14 +80,13 @@ describe("database native friend requests", () => {
             .mockResolvedValueOnce(null)
             .mockResolvedValueOnce(null)
             .mockResolvedValueOnce(null);
-        restDbPushMock.mockResolvedValueOnce("request-1");
 
         const { sendFriendRequest } = await import("@/lib/firebase/database");
         const result = await sendFriendRequest("user-1", "+46701112233", "+46 70 999 88 77");
 
         expect(result).toEqual({ success: true });
-        expect(restDbPushMock).toHaveBeenCalledWith(
-            "friendRequests",
+        expect(restDbSetMock).toHaveBeenCalledWith(
+            "friendRequests/user-1_target-user",
             expect.objectContaining({
                 from: "user-1",
                 fromPhone: "+46701112233",
@@ -113,14 +110,14 @@ describe("database native friend requests", () => {
             .mockResolvedValueOnce(null)
             .mockResolvedValueOnce(null)
             .mockResolvedValueOnce(null);
-        restDbPushMock.mockRejectedValueOnce(new Error("DB PUSH failed: 401 Permission denied"));
+        restDbSetMock.mockRejectedValueOnce(new Error("DB SET failed: 401 Permission denied"));
 
         const { sendFriendRequest } = await import("@/lib/firebase/database");
         const result = await sendFriendRequest("user-1", "+46701112233", "+46 70 999 88 77");
 
         expect(result).toEqual({
             success: false,
-            error: "DB PUSH failed: 401 Permission denied",
+            error: "DB SET failed: 401 Permission denied",
         });
     });
 
@@ -264,5 +261,77 @@ describe("database native friend requests", () => {
                 status: "pending",
             }),
         ]);
+    });
+
+    it("dedupes repeated incoming requests from the same sender", async () => {
+        restDbQueryByChildMock.mockResolvedValue({
+            "request-1": {
+                from: "user-2",
+                fromPhone: "+46701112233",
+                to: "user-1",
+                toPhone: "+46709998877",
+                status: "pending",
+                createdAt: 123,
+            },
+            "request-2": {
+                from: "user-2",
+                fromPhone: "+46701112233",
+                to: "user-1",
+                toPhone: "+46709998877",
+                status: "pending",
+                createdAt: 456,
+            },
+        });
+
+        const { getPendingRequests } = await import("@/lib/firebase/database");
+        const result = await getPendingRequests("user-1");
+
+        expect(result).toHaveLength(1);
+        expect(result[0]).toEqual(
+            expect.objectContaining({
+                id: "request-2",
+                from: "user-2",
+                createdAt: 456,
+            })
+        );
+    });
+
+    it("mirrors friend card settings to both sides of a connection", async () => {
+        const { updateFriendCardSettings } = await import("@/lib/firebase/database");
+        const result = await updateFriendCardSettings("user-1", "user-2", {
+            theme: {
+                heartColor: "#22c55e",
+                nameColor: "#22c55e",
+                iconShape: "circle",
+            },
+            customMarco: "Ping?",
+            customPolo: "Here!",
+        });
+
+        expect(result).toEqual({ success: true });
+        expect(restDbUpdateMock).toHaveBeenNthCalledWith(
+            1,
+            "connections/user-1/user-2",
+            expect.objectContaining({
+                customMarco: "Ping?",
+                customPolo: "Here!",
+                theme: expect.objectContaining({
+                    heartColor: "#22c55e",
+                    iconShape: "circle",
+                }),
+            })
+        );
+        expect(restDbUpdateMock).toHaveBeenNthCalledWith(
+            2,
+            "connections/user-2/user-1",
+            expect.objectContaining({
+                customMarco: "Ping?",
+                customPolo: "Here!",
+                theme: expect.objectContaining({
+                    heartColor: "#22c55e",
+                    iconShape: "circle",
+                }),
+            })
+        );
     });
 });

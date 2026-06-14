@@ -51,7 +51,7 @@ describe("native notifications", () => {
         const result = await initNativeNotifications();
 
         expect(result).toBe(true);
-        expect(addListenerMock).toHaveBeenCalledTimes(2);
+        expect(addListenerMock).toHaveBeenCalledTimes(3);
         expect(registerMock).toHaveBeenCalledTimes(1);
     });
 

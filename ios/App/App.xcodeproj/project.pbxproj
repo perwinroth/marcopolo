@@ -16,6 +16,8 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		7F965ACE33009C53779A78CB /* WatchPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CF97E0C7CE84B73927058F2 /* WatchPlugin.swift */; };
+		81A32F1B6D214A02B8457C11 /* SignalFeedbackPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81A32F1B6D214A02B8457C10 /* SignalFeedbackPlugin.swift */; };
+		81A32F1B6D214A02B8457C13 /* SignalFeedbackPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = 81A32F1B6D214A02B8457C12 /* SignalFeedbackPlugin.m */; };
 		9D3C27E42F450AC30066D849 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 9D3C27E32F450AC30066D849 /* GoogleService-Info.plist */; };
 		9D3C27F32F4F343C0066D849 /* MarcoPoloWatch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 9D3C27E92F4F343B0066D849 /* MarcoPoloWatch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		CF96BD3BC248DA8DF80C8D9C /* WatchPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = 5F2C99398F955DED0AD3B853 /* WatchPlugin.m */; };
@@ -57,6 +59,8 @@
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		5F2C99398F955DED0AD3B853 /* WatchPlugin.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = WatchPlugin.m; sourceTree = "<group>"; };
+		81A32F1B6D214A02B8457C10 /* SignalFeedbackPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SignalFeedbackPlugin.swift; sourceTree = "<group>"; };
+		81A32F1B6D214A02B8457C12 /* SignalFeedbackPlugin.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = SignalFeedbackPlugin.m; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		9D3C27E22F4503840066D849 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		9D3C27E32F450AC30066D849 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
@@ -130,6 +134,8 @@
 				50B271D01FEDC1A000F3C39B /* public */,
 				1CF97E0C7CE84B73927058F2 /* WatchPlugin.swift */,
 				5F2C99398F955DED0AD3B853 /* WatchPlugin.m */,
+				81A32F1B6D214A02B8457C10 /* SignalFeedbackPlugin.swift */,
+				81A32F1B6D214A02B8457C12 /* SignalFeedbackPlugin.m */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -268,6 +274,8 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				7F965ACE33009C53779A78CB /* WatchPlugin.swift in Sources */,
 				CF96BD3BC248DA8DF80C8D9C /* WatchPlugin.m in Sources */,
+				81A32F1B6D214A02B8457C11 /* SignalFeedbackPlugin.swift in Sources */,
+				81A32F1B6D214A02B8457C13 /* SignalFeedbackPlugin.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

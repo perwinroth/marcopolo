@@ -1,17 +1,18 @@
 import * as admin from "firebase-admin";
-import corsLib from "cors";
 import * as functions from "firebase-functions";
 import * as nodemailer from "nodemailer";
+import { normalizePushBundleId, getUserPushTokenField } from "./pushTokens";
+
+const corsLib = require("cors") as typeof import("cors");
 
 admin.initializeApp();
 
 const cors = corsLib({ origin: true });
 const region = "europe-west1";
-const appBundleId = "co.polomar.app";
-const watchBundleId = "co.polomar.app.watchkitapp";
 
 type DeliveryPriority = "normal" | "high";
 type NotificationKind = "marco" | "polo" | "sos";
+type SignalType = "heart" | "wind" | "fist" | "hand" | "sphere" | "eye" | "finger";
 type RecoveryRequestRecord = {
     code: string;
     email: string;
@@ -26,6 +27,26 @@ type UserRecord = {
     phone?: string;
     watchToken?: string;
 };
+type ConnectionThemeRecord = {
+    signalType?: SignalType;
+    iconShape?: string;
+};
+
+const DEFAULT_SIGNAL_TYPE: SignalType = "hand";
+
+function normalizeSignalType(signalType?: string, iconShape?: string): SignalType {
+    if (signalType === "finger") {
+        return "hand";
+    }
+    if (signalType === "heart" || signalType === "wind" || signalType === "fist" || signalType === "hand" || signalType === "sphere" || signalType === "eye" || signalType === "finger") {
+        return signalType;
+    }
+
+    if (iconShape === "heart") return "heart";
+    if (iconShape === "circle") return "sphere";
+    if (iconShape === "hand") return "hand";
+    return DEFAULT_SIGNAL_TYPE;
+}
 
 function withCors(
     handler: (req: functions.https.Request, res: functions.Response<unknown>) => Promise<void>
@@ -94,7 +115,7 @@ async function getDisplayName(uid: string): Promise<string> {
     return user.displayName || user.phone || "Someone";
 }
 
-function buildNotificationMessage(kind: NotificationKind, senderName: string): {
+function buildNotificationMessage(kind: NotificationKind, senderName: string, signalType: SignalType = DEFAULT_SIGNAL_TYPE): {
     title: string;
     body: string;
     priority: DeliveryPriority;
@@ -105,7 +126,11 @@ function buildNotificationMessage(kind: NotificationKind, senderName: string): {
             title: "Marco?",
             body: `${senderName} is checking in on you`,
             priority: "normal",
-            data: { type: "marco" },
+            data: {
+                type: "marco",
+                signalType,
+                signalState: "marco-received",
+            },
         };
     }
 
@@ -114,7 +139,11 @@ function buildNotificationMessage(kind: NotificationKind, senderName: string): {
             title: "Polo!",
             body: `${senderName} responded. They are okay.`,
             priority: "normal",
-            data: { type: "polo" },
+            data: {
+                type: "polo",
+                signalType,
+                signalState: "polo-sent",
+            },
         };
     }
 
@@ -122,8 +151,22 @@ function buildNotificationMessage(kind: NotificationKind, senderName: string): {
         title: "Help Needed",
         body: `${senderName} needs help right now.`,
         priority: "high",
-        data: { type: "sos" },
+        data: {
+            type: "sos",
+            signalType,
+            signalState: "marco-received",
+        },
     };
+}
+
+async function getConnectionSignalType(uid: string, friendUid: string): Promise<SignalType> {
+    const snapshot = await admin.database().ref(`connections/${uid}/${friendUid}/theme`).get();
+    if (!snapshot.exists()) {
+        return DEFAULT_SIGNAL_TYPE;
+    }
+
+    const theme = snapshot.val() as ConnectionThemeRecord;
+    return normalizeSignalType(theme.signalType, theme.iconShape);
 }
 
 async function sendPushToUser(
@@ -159,6 +202,7 @@ async function sendPushToUser(
         },
         apns: {
             headers: {
+                "apns-push-type": "alert",
                 "apns-priority": priority === "high" ? "10" : "5",
             },
             payload: {
@@ -316,9 +360,7 @@ export const registerWatch = withCors(async (req, res) => {
         return;
     }
 
-    const bundleId = requestedBundleId === appBundleId || requestedBundleId === watchBundleId
-        ? requestedBundleId
-        : watchBundleId;
+    const bundleId = normalizePushBundleId(requestedBundleId);
 
     const fcmToken = await convertApnsToken(apnsToken, bundleId);
     if (!fcmToken) {
@@ -326,8 +368,9 @@ export const registerWatch = withCors(async (req, res) => {
         return;
     }
 
+    const tokenField = getUserPushTokenField(bundleId);
     await admin.database().ref(`users/${decodedToken.uid}`).update({
-        watchToken: fcmToken,
+        [tokenField]: fcmToken,
         notificationsEnabled: true,
         lastTokenUpdate: Date.now(),
     });
@@ -363,11 +406,23 @@ export const sendNotification = withCors(async (req, res) => {
 
     const requestedType = typeof req.body?.type === "string" ? req.body.type.toLowerCase() : "";
     if (requestedType === "marco" || requestedType === "marco_received") {
-        payload = buildNotificationMessage("marco", await getDisplayName(watchSenderId));
+        payload = buildNotificationMessage(
+            "marco",
+            await getDisplayName(watchSenderId),
+            await getConnectionSignalType(toUid, watchSenderId)
+        );
     } else if (requestedType === "polo" || requestedType === "polo_received") {
-        payload = buildNotificationMessage("polo", await getDisplayName(watchSenderId));
+        payload = buildNotificationMessage(
+            "polo",
+            await getDisplayName(watchSenderId),
+            await getConnectionSignalType(toUid, watchSenderId)
+        );
     } else if (requestedType === "sos" || requestedType === "sos_received") {
-        payload = buildNotificationMessage("sos", await getDisplayName(watchSenderId));
+        payload = buildNotificationMessage(
+            "sos",
+            await getDisplayName(watchSenderId),
+            await getConnectionSignalType(toUid, watchSenderId)
+        );
     } else {
         payload.data = Object.fromEntries(
             Object.entries(req.body?.data || {}).map(([key, value]) => [key, String(value)])
@@ -399,7 +454,8 @@ export const notifyOnConnectionStatusChange = functions
         const recipientUid = String(context.params.uid);
         const senderUid = String(context.params.friendUid);
         const senderName = await getDisplayName(senderUid);
-        const payload = buildNotificationMessage(kind, senderName);
+        const signalType = await getConnectionSignalType(recipientUid, senderUid);
+        const payload = buildNotificationMessage(kind, senderName, signalType);
         await sendPushToUser(recipientUid, payload);
         return null;
     });
