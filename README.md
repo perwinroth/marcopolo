@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Marco Polo — Friend Check‑In
 
-## Getting Started
+A privacy‑first app for staying close to the three people who matter most.
 
-First, run the development server:
+Hold a friend's card to send a **Marco?** ("thinking of you / are you okay?"). They tap back **Polo!** ("I'm okay"). When something's wrong, one button sends a **Need Help** signal to your whole trusted circle. There's an Apple Watch companion so a check‑in is one tap from your wrist.
+
+No feeds. No likes. No ads. Just a quiet, reliable line to your inner circle.
+
+---
+
+## What it does
+
+- **Marco / Polo signals** — a warm, wordless "thinking of you" and an easy "I'm okay" reply.
+- **Trusted circle of 3** — deliberately small. This is for your closest people, not a social network.
+- **Need Help** — a high‑priority alert to everyone in your circle when you need them.
+- **Custom signals** — rename your "Marco" and "Polo" to anything you like (encrypted at rest).
+- **Apple Watch app** — check in and respond from your wrist.
+- **Haptics + sound + motion** — signals you can feel, not just see.
+- **Push notifications** — know the moment someone reaches out.
+
+## Privacy
+
+- Phone numbers stored **hashed (SHA‑256)** — never shared with other users.
+- Custom messages **encrypted (AES‑256‑GCM)** — only you can read them.
+- **No selling data, no third‑party sharing, no advertising, no tracking.**
+- GDPR data export & account deletion built into Settings.
+- Full policy: [`app/privacy/page.tsx`](app/privacy/page.tsx) → published at `/privacy`.
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| UI / web | Next.js 16 (App Router, static export), React 19, Tailwind CSS 4 |
+| Native shell | Capacitor 8 (iOS) |
+| Wearable | Apple Watch app (SwiftUI) + WatchConnectivity |
+| Backend | Firebase — Realtime Database, Cloud Functions, Phone Auth, Cloud Messaging |
+| Native plugins | SignalFeedbackPlugin (haptics/sound), WatchPlugin |
+| Tests | Vitest (42 tests) |
+
+- **App ID:** `co.polomar.app` (watch: `co.polomar.app.watchkitapp`)
+- **Firebase project:** `marcopolo-3fa43`
+
+## Develop
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev          # http://localhost:3000
+npm test             # vitest (42 tests)
+npm run verify       # tests + typecheck
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Ship to iOS
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The iPhone app runs the **copied** Capacitor bundle in `ios/App/App/public`, not the source files. A source fix is not a shipped fix until the bundle is rebuilt. Always run:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run release:ios:prep    # verify + clean + build:web + cap copy ios
+```
 
-## Learn More
+Then archive in Xcode. See [`docs/release.md`](docs/release.md) for the full proof standard and [`app-store/SUBMISSION.md`](app-store/SUBMISSION.md) for the complete App Store submission walkthrough.
 
-To learn more about Next.js, take a look at the following resources:
+## Repository layout
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Path | Purpose |
+|---|---|
+| `app/` | Next.js routes & pages (includes `/privacy`, `/previews`) |
+| `components/` | UI components (FriendCard, etc.) |
+| `lib/` | Shared logic — Firebase, signals, haptics, native bridges |
+| `functions/` | Firebase Cloud Functions |
+| `ios/` | Native iOS app + Apple Watch app |
+| `app-store/` | App Store listing copy, screenshots & submission guide |
+| `docs/` | Release & testing process docs |
+| `tests/` | Vitest suite |
+| `scripts/` | Build helpers + screenshot capture |
