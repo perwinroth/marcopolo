@@ -48,3 +48,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# temp / secret-handling (do not commit)
+.venv-sms/
+scripts/sms-region.py

@@ -7,6 +7,26 @@
 
 .PhoneInputCountry {
     margin-right: 0.5rem;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 0.5rem;
+    background-color: rgba(255, 255, 255, 0.06);
+    cursor: pointer;
+}
+
+/* Visible chevron so users know the country is a dropdown they can change */
+.PhoneInputCountry::after {
+    content: "";
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid currentColor;
+    opacity: 0.7;
+    margin-left: 0.1rem;
 }
 
 .PhoneInputCountryIcon {
@@ -22,7 +42,8 @@
     border: none;
     cursor: pointer;
     opacity: 0;
-    /* Hide the select but keep it clickable over the icon */
+    /* Cover only the country chip (flag + chevron), not the number field,
+       so the dropdown is clickable but typing the number still works. */
     position: absolute;
     top: 0;
     left: 0;
@@ -30,6 +51,11 @@
     width: 100%;
     z-index: 10;
     appearance: none;
+}
+
+/* Make dropdown option text readable on light system menus */
+.PhoneInputCountrySelect option {
+    color: #0f172a;
 }
 
 .PhoneInputInput {

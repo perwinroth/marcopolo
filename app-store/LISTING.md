@@ -88,9 +88,9 @@ First public release of Marco Polo.
 | **Price** | Free (Tier 0) |
 | **Availability** | All territories (or your choice) |
 | **Age Rating** | 4+ (see notes in SUBMISSION.md — no objectionable content) |
-| **Privacy Policy URL** | https://marcopolo-3fa43.web.app/privacy |
-| **Support URL** | https://marcopolo-3fa43.web.app  *(or a dedicated support page — see SUBMISSION.md)* |
-| **Marketing URL** *(optional)* | https://marcopolo-3fa43.web.app |
+| **Privacy Policy URL** | https://www.polomar.co/privacy |
+| **Support URL** | https://www.polomar.co  *(use the www. version — bare polomar.co 404s)* |
+| **Marketing URL** *(optional)* | https://www.polomar.co |
 | **Copyright** | 2026 Per Winroth |
 
 ## Contact / Demo account for App Review

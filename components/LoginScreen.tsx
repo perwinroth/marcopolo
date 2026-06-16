@@ -24,8 +24,29 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState("");
     const [isNativePlatform, setIsNativePlatform] = useState(false);
+    // Default the phone country to the user's locale region (e.g. en-US -> US,
+    // sv-SE -> SE), falling back to Sweden. The picker still lets them change it.
+    const [defaultCountry, setDefaultCountry] = useState<string>("SE");
 
     const isMounted = useRef(true);
+
+    useEffect(() => {
+        try {
+            const locale =
+                (typeof navigator !== "undefined" &&
+                    (navigator.languages?.[0] || navigator.language)) ||
+                "";
+            // Region is the part after the dash, e.g. "en-GB" -> "GB".
+            const region = locale.includes("-")
+                ? locale.split("-").pop()?.toUpperCase()
+                : undefined;
+            if (region && /^[A-Z]{2}$/.test(region)) {
+                setDefaultCountry(region);
+            }
+        } catch {
+            // keep fallback "SE"
+        }
+    }, []);
 
     useEffect(() => {
         isMounted.current = true;
@@ -219,7 +240,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                                 placeholder="Enter phone number"
                                 value={phoneNumber}
                                 onChange={setPhoneNumber}
-                                defaultCountry="SE"
+                                defaultCountry={defaultCountry as never}
                                 international
                                 countryCallingCodeEditable={false}
                                 className="w-full"
