@@ -8,6 +8,7 @@ import { createInvitation } from "@/lib/firebase/invitations";
 import PhoneInput, { parsePhoneNumber } from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 import "@/app/phone-input.css";
+import { ALLOWED_SMS_COUNTRIES, DEFAULT_SMS_COUNTRY, isAllowedSmsCountry } from "@/lib/allowedRegions";
 
 interface AddFriendModalProps {
   isOpen: boolean;
@@ -24,9 +25,10 @@ export default function AddFriendModal({ isOpen, onClose, userUid, userPhone }: 
 
   const fallbackCountry = (() => {
     try {
-      return parsePhoneNumber(userPhone)?.country;
+      const country = parsePhoneNumber(userPhone)?.country;
+      return isAllowedSmsCountry(country) ? country : DEFAULT_SMS_COUNTRY;
     } catch {
-      return undefined;
+      return DEFAULT_SMS_COUNTRY;
     }
   })();
 
@@ -183,7 +185,8 @@ export default function AddFriendModal({ isOpen, onClose, userUid, userPhone }: 
                   placeholder="Enter phone number"
                   value={phoneNumber}
                   onChange={setPhoneNumber}
-                  defaultCountry={fallbackCountry}
+                  defaultCountry={fallbackCountry as never}
+                  countries={[...ALLOWED_SMS_COUNTRIES] as never}
                   international
                   countryCallingCodeEditable={false}
                   className="w-full"

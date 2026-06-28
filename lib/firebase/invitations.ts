@@ -1,6 +1,40 @@
 import { ref, set, get, remove, query, orderByChild, equalTo } from "firebase/database";
 import { database, auth } from "./config";
-import { normalizePhoneNumber } from "./auth";
+import { Capacitor } from "@capacitor/core";
+import { normalizePhoneNumber, getNativeUid, restDbGet, restDbSet, restDbQueryByChild } from "./auth";
+
+// On native iOS the app signs in via the Firebase REST API (skipNativeAuth: true),
+// so the JS SDK's `auth.currentUser` is null and JS SDK DB calls are unauthenticated.
+// These dual-mode helpers mirror lib/firebase/database.ts so invitations work on
+// both web (JS SDK) and native (REST).
+function isNative(): boolean { return Capacitor.isNativePlatform(); }
+
+function currentUid(): string | null {
+  return isNative() ? getNativeUid() : (auth.currentUser?.uid ?? null);
+}
+
+async function dbGet(path: string): Promise<any> {
+  if (isNative()) return restDbGet(path);
+  const s = await get(ref(database, path));
+  return s.exists() ? s.val() : null;
+}
+
+async function dbSet(path: string, data: unknown): Promise<void> {
+  if (isNative()) { await restDbSet(path, data); return; }
+  await set(ref(database, path), data);
+}
+
+async function dbRemove(path: string): Promise<void> {
+  if (isNative()) { await restDbSet(path, null); return; } // PUT null deletes in RTDB REST
+  await remove(ref(database, path));
+}
+
+async function dbQueryByChild(path: string, child: string, value: string): Promise<Record<string, any> | null> {
+  if (isNative()) return (await restDbQueryByChild(path, child, value)) as Record<string, any> | null;
+  const q = query(ref(database, path), orderByChild(child), equalTo(value));
+  const s = await get(q);
+  return s.exists() ? (s.val() as Record<string, any>) : null;
+}
 
 export interface Invitation {
   id: string;
@@ -44,18 +78,16 @@ export async function createInvitation(
   message?: string
 ): Promise<{ success: boolean; token?: string; error?: string }> {
   try {
-    const user = auth.currentUser;
-    if (!user) {
+    const uid = currentUid();
+    if (!uid) {
       return { success: false, error: "Not authenticated" };
     }
 
     // Get inviter's name
-    const userRef = ref(database, `users/${user.uid}`);
-    const userSnapshot = await get(userRef);
-    if (!userSnapshot.exists()) {
+    const userData = await dbGet(`users/${uid}`);
+    if (!userData) {
       return { success: false, error: "User profile not found" };
     }
-    const userData = userSnapshot.val();
 
     // Check if invitation already exists for this phone
     const phoneHash = await hashPhone(canonicalizePhone(inviteePhone));
@@ -75,7 +107,7 @@ export async function createInvitation(
     const invitation: Invitation = {
       id: invitationId,
       token,
-      inviterId: user.uid,
+      inviterId: uid,
       inviterName: userData.displayName || userData.firstName || userData.phone || "Someone",
       inviterPhone: userData.phone || "",
       inviteePhone: inviteePhone,
@@ -87,7 +119,7 @@ export async function createInvitation(
     };
 
     // Save to database
-    await set(ref(database, `invitations/${invitationId}`), invitation);
+    await dbSet(`invitations/${invitationId}`, invitation);
 
     return { success: true, token };
   } catch (error: any) {
@@ -99,15 +131,12 @@ export async function createInvitation(
 // Get invitation by token
 export async function getInvitationByToken(token: string): Promise<Invitation | null> {
   try {
-    const invitationsRef = ref(database, 'invitations');
-    const invitationQuery = query(invitationsRef, orderByChild('token'), equalTo(token));
-    const snapshot = await get(invitationQuery);
+    const invitations = await dbQueryByChild('invitations', 'token', token);
 
-    if (!snapshot.exists()) {
+    if (!invitations) {
       return null;
     }
 
-    const invitations = snapshot.val();
     const invitationId = Object.keys(invitations)[0];
     const invitation = invitations[invitationId];
 
@@ -127,15 +156,12 @@ export async function getInvitationByToken(token: string): Promise<Invitation | 
 // Get invitation by phone hash
 async function getInvitationByPhoneHash(phoneHash: string): Promise<Invitation | null> {
   try {
-    const invitationsRef = ref(database, 'invitations');
-    const invitationQuery = query(invitationsRef, orderByChild('inviteePhoneHash'), equalTo(phoneHash));
-    const snapshot = await get(invitationQuery);
+    const invitations = await dbQueryByChild('invitations', 'inviteePhoneHash', phoneHash);
 
-    if (!snapshot.exists()) {
+    if (!invitations) {
       return null;
     }
 
-    const invitations = snapshot.val();
     const invitationId = Object.keys(invitations)[0];
     return { ...invitations[invitationId], id: invitationId };
   } catch (error) {
@@ -150,11 +176,9 @@ export async function updateInvitationStatus(
   status: Invitation["status"],
   acceptedBy?: string
 ): Promise<void> {
-  const invitationRef = ref(database, `invitations/${invitationId}`);
-  const currentSnapshot = await get(invitationRef);
-  if (currentSnapshot.exists()) {
-    const current = currentSnapshot.val();
-    await set(invitationRef, {
+  const current = await dbGet(`invitations/${invitationId}`);
+  if (current) {
+    await dbSet(`invitations/${invitationId}`, {
       ...current,
       status,
       ...(status === "accepted" ? { usedAt: Date.now() } : {}),
@@ -176,14 +200,12 @@ export async function acceptInvitation(token: string, newUserId: string): Promis
       return { success: false, error: "Invitation already used" };
     }
 
-    const newUserRef = ref(database, `users/${newUserId}`);
-    const newUserSnapshot = await get(newUserRef);
+    const newUserData = await dbGet(`users/${newUserId}`);
 
-    if (!newUserSnapshot.exists()) {
+    if (!newUserData) {
        return { success: false, error: "User profile is missing" };
     }
 
-    const newUserData = newUserSnapshot.val();
     const currentUserPhone = newUserData.phone || "";
     if (!currentUserPhone) {
       return { success: false, error: "User phone number is missing" };
@@ -212,7 +234,7 @@ export async function acceptInvitation(token: string, newUserId: string): Promis
       lastActionTime: Date.now(),
       isPinned: false
     };
-    await set(ref(database, `connections/${invitation.inviterId}/${newUserId}`), connectionForInviter);
+    await dbSet(`connections/${invitation.inviterId}/${newUserId}`, connectionForInviter);
 
     // 2. Add to new user's friend list (they see the inviter)
     const connectionForNewUser = {
@@ -222,7 +244,7 @@ export async function acceptInvitation(token: string, newUserId: string): Promis
       lastActionTime: Date.now(),
       isPinned: false
     };
-    await set(ref(database, `connections/${newUserId}/${invitation.inviterId}`), connectionForNewUser);
+    await dbSet(`connections/${newUserId}/${invitation.inviterId}`, connectionForNewUser);
 
     return { success: true, inviterId: invitation.inviterId };
   } catch (error: any) {
@@ -234,15 +256,12 @@ export async function acceptInvitation(token: string, newUserId: string): Promis
 // Get user's sent invitations
 export async function getUserInvitations(userId: string): Promise<Invitation[]> {
   try {
-    const invitationsRef = ref(database, 'invitations');
-    const userInvitationsQuery = query(invitationsRef, orderByChild('inviterId'), equalTo(userId));
-    const snapshot = await get(userInvitationsQuery);
+    const invitations = await dbQueryByChild('invitations', 'inviterId', userId);
 
-    if (!snapshot.exists()) {
+    if (!invitations) {
       return [];
     }
 
-    const invitations = snapshot.val();
     return Object.keys(invitations).map(id => ({
       ...invitations[id],
       id,
@@ -267,21 +286,19 @@ export async function revokeInvitation(invitationId: string): Promise<{ success:
 // Delete expired invitations
 export async function deleteExpiredInvitations(): Promise<number> {
   try {
-    const invitationsRef = ref(database, 'invitations');
-    const snapshot = await get(invitationsRef);
+    const invitations = await dbGet('invitations');
 
-    if (!snapshot.exists()) {
+    if (!invitations) {
       return 0;
     }
 
-    const invitations = snapshot.val();
     const now = Date.now();
     let deletedCount = 0;
 
     for (const id in invitations) {
       const invitation = invitations[id];
       if (invitation.expiresAt < now || invitation.status === "expired") {
-        await remove(ref(database, `invitations/${id}`));
+        await dbRemove(`invitations/${id}`);
         deletedCount++;
       }
     }

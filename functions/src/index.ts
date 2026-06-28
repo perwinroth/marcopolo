@@ -1,6 +1,7 @@
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
 import * as nodemailer from "nodemailer";
+import * as crypto from "crypto";
 import { normalizePushBundleId, getUserPushTokenField } from "./pushTokens";
 
 const corsLib = require("cors") as typeof import("cors");
@@ -80,6 +81,14 @@ function requirePost(req: functions.https.Request): void {
 
 function safeEmailKey(email: string): string {
     return email.trim().toLowerCase().replace(/[.#$[\]]/g, "_");
+}
+
+// Mirrors lib/firebase/invitations.ts hashPhone(canonicalizePhone(phone)) so we
+// can find pending invitations that were addressed to this user's phone.
+function hashUserPhone(phone: string): string {
+    const salt = process.env.NEXT_PUBLIC_PHONE_SALT || "marco-polo-salt";
+    const normalized = phone.replace(/\D/g, "");
+    return crypto.createHash("sha256").update(normalized + salt).digest("hex");
 }
 
 function generateRecoveryCode(): string {
@@ -459,3 +468,89 @@ export const notifyOnConnectionStatusChange = functions
         await sendPushToUser(recipientUid, payload);
         return null;
     });
+
+// Full GDPR account deletion. Runs with admin privileges so it can remove data
+// the client cannot reach under the security rules: recoveryRequests (admin
+// only), invitations addressed to / accepted by the user, and block entries
+// other users created against them. The caller is identified by their ID token,
+// so a user can only delete their own account.
+export const deleteAccount = withCors(async (req, res) => {
+    requirePost(req);
+
+    const decoded = await verifyBearerToken(req);
+    const uid = decoded.uid;
+    const db = admin.database();
+    const user = await getUser(uid);
+
+    // Collect every path to null into one atomic multi-location update.
+    const updates: Record<string, null> = {};
+
+    // 1. Profile (includes fcmToken / watchToken / email / phone).
+    updates[`users/${uid}`] = null;
+
+    // 2. Connections — mine and each friend's reverse pointer back to me.
+    const connSnap = await db.ref(`connections/${uid}`).get();
+    if (connSnap.exists()) {
+        for (const friendUid of Object.keys(connSnap.val() as Record<string, unknown>)) {
+            updates[`connections/${uid}/${friendUid}`] = null;
+            updates[`connections/${friendUid}/${uid}`] = null;
+        }
+    }
+    updates[`connections/${uid}`] = null;
+
+    // 3. Blocks — mine, plus anyone who blocked me.
+    updates[`blocked/${uid}`] = null;
+    const blockedSnap = await db.ref("blocked").get();
+    if (blockedSnap.exists()) {
+        const all = blockedSnap.val() as Record<string, Record<string, unknown>>;
+        for (const blockerUid of Object.keys(all)) {
+            if (all[blockerUid] && Object.prototype.hasOwnProperty.call(all[blockerUid], uid)) {
+                updates[`blocked/${blockerUid}/${uid}`] = null;
+            }
+        }
+    }
+
+    // 4. Friend requests I sent or received.
+    const [fromSnap, toSnap] = await Promise.all([
+        db.ref("friendRequests").orderByChild("from").equalTo(uid).get(),
+        db.ref("friendRequests").orderByChild("to").equalTo(uid).get(),
+    ]);
+    for (const snap of [fromSnap, toSnap]) {
+        if (snap.exists()) {
+            for (const id of Object.keys(snap.val() as Record<string, unknown>)) {
+                updates[`friendRequests/${id}`] = null;
+            }
+        }
+    }
+
+    // 5. Invitations I sent, accepted, or that were addressed to my phone.
+    const phoneHash = user?.phone ? hashUserPhone(user.phone) : null;
+    const invSnap = await db.ref("invitations").get();
+    if (invSnap.exists()) {
+        const all = invSnap.val() as Record<string, { inviterId?: string; acceptedBy?: string; inviteePhoneHash?: string }>;
+        for (const id of Object.keys(all)) {
+            const inv = all[id];
+            if (inv.inviterId === uid || inv.acceptedBy === uid || (phoneHash && inv.inviteePhoneHash === phoneHash)) {
+                updates[`invitations/${id}`] = null;
+            }
+        }
+    }
+
+    // 6. Recovery requests (keyed by email).
+    if (user?.email) {
+        updates[`recoveryRequests/${safeEmailKey(user.email)}`] = null;
+    }
+
+    // Apply all database deletions atomically.
+    await db.ref().update(updates);
+
+    // Finally remove the Firebase Auth account (revokes the user's tokens).
+    try {
+        await admin.auth().deleteUser(uid);
+    } catch (error: unknown) {
+        // If the auth user is already gone, the data wipe still succeeded.
+        console.warn("[deleteAccount] auth user delete:", error);
+    }
+
+    res.status(200).json({ success: true });
+});

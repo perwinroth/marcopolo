@@ -9,6 +9,7 @@ import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 import "@/app/phone-input.css";
 import { Capacitor } from "@capacitor/core";
+import { ALLOWED_SMS_COUNTRIES, DEFAULT_SMS_COUNTRY, isAllowedSmsCountry } from "@/lib/allowedRegions";
 
 interface LoginScreenProps {
     onLogin: () => void;
@@ -26,7 +27,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     const [isNativePlatform, setIsNativePlatform] = useState(false);
     // Default the phone country to the user's locale region (e.g. en-US -> US,
     // sv-SE -> SE), falling back to Sweden. The picker still lets them change it.
-    const [defaultCountry, setDefaultCountry] = useState<string>("SE");
+    const [defaultCountry, setDefaultCountry] = useState<string>(DEFAULT_SMS_COUNTRY);
 
     const isMounted = useRef(true);
 
@@ -40,7 +41,9 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
             const region = locale.includes("-")
                 ? locale.split("-").pop()?.toUpperCase()
                 : undefined;
-            if (region && /^[A-Z]{2}$/.test(region)) {
+            // Only honour the locale region if it's an allow-listed SMS country;
+            // otherwise keep the default so the picker never starts on a blocked country.
+            if (region && /^[A-Z]{2}$/.test(region) && isAllowedSmsCountry(region)) {
                 setDefaultCountry(region);
             }
         } catch {
@@ -241,6 +244,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                                 value={phoneNumber}
                                 onChange={setPhoneNumber}
                                 defaultCountry={defaultCountry as never}
+                                countries={[...ALLOWED_SMS_COUNTRIES] as never}
                                 international
                                 countryCallingCodeEditable={false}
                                 className="w-full"

@@ -1,7 +1,32 @@
-import { auth, database } from "./config";
-import { ref, remove, get } from "firebase/database";
-import { deleteUser } from "firebase/auth";
+import { database } from "./config";
+import { ref, get, query, orderByChild, equalTo } from "firebase/database";
+import { Capacitor } from "@capacitor/core";
 import { decryptCustomMessage } from "../crypto/encryption";
+import { restDbGet, restDbQueryByChild, signOut } from "./auth";
+import { callFunction } from "./functions";
+
+// On native iOS the app signs in via the Firebase REST API (skipNativeAuth: true),
+// so the JS SDK is unauthenticated. These dual-mode read helpers mirror
+// lib/firebase/database.ts so the data export works on web and native.
+function isNative(): boolean { return Capacitor.isNativePlatform(); }
+
+async function dbGet(path: string): Promise<any> {
+    if (isNative()) return restDbGet(path);
+    const s = await get(ref(database, path));
+    return s.exists() ? s.val() : null;
+}
+
+// IMPORTANT: the security rules deny unfiltered reads of `invitations` and
+// `friendRequests` — only indexed equality queries are allowed. Always query
+// by child, never read the whole node.
+async function dbQueryByChild(path: string, child: string, value: string): Promise<Record<string, any>> {
+    if (isNative()) {
+        return ((await restDbQueryByChild(path, child, value)) as Record<string, any> | null) || {};
+    }
+    const q = query(ref(database, path), orderByChild(child), equalTo(value));
+    const s = await get(q);
+    return s.exists() ? (s.val() as Record<string, any>) : {};
+}
 
 export interface UserDataExport {
     profile: {
@@ -46,9 +71,7 @@ export interface UserDataExport {
 export async function exportUserData(uid: string): Promise<UserDataExport> {
     try {
         // Get user profile
-        const userRef = ref(database, `users/${uid}`);
-        const userSnapshot = await get(userRef);
-        const userData = userSnapshot.val() || {};
+        const userData = (await dbGet(`users/${uid}`)) || {};
 
         // Decrypt custom messages for export
         const customMarcoRaw = userData.customMarco || userData.customMarko;
@@ -60,16 +83,12 @@ export async function exportUserData(uid: string): Promise<UserDataExport> {
             : "Polo!";
 
         // Get connections
-        const connectionsRef = ref(database, `connections/${uid}`);
-        const connectionsSnapshot = await get(connectionsRef);
-        const connectionsData = connectionsSnapshot.val() || {};
+        const connectionsData = (await dbGet(`connections/${uid}`)) || {};
 
         const connections = await Promise.all(
             Object.entries(connectionsData).map(async ([friendId, data]: [string, any]) => {
-                // Get friend's phone number
-                const friendRef = ref(database, `users/${friendId}`);
-                const friendSnapshot = await get(friendRef);
-                const friendData = friendSnapshot.val() || {};
+                // Get friend's phone number (allowed: we have a connection with them)
+                const friendData = (await dbGet(`users/${friendId}`)) || {};
 
                 return {
                     friendId,
@@ -81,41 +100,31 @@ export async function exportUserData(uid: string): Promise<UserDataExport> {
             })
         );
 
-        // Get sent invitations
-        const invitationsRef = ref(database, "invitations");
-        const invitationsSnapshot = await get(invitationsRef);
-        const allInvitations = invitationsSnapshot.val() || {};
+        // Get sent invitations (filtered query — full-node reads are denied by rules)
+        const myInvitations = await dbQueryByChild("invitations", "inviterId", uid);
+        const invitationsSent = Object.entries(myInvitations).map(([id, inv]: [string, any]) => ({
+            token: inv.token || id,
+            inviteePhone: inv.inviteePhone || "Unknown",
+            message: inv.message,
+            createdAt: inv.createdAt,
+            expiresAt: inv.expiresAt,
+        }));
 
-        const invitationsSent = Object.entries(allInvitations)
-            .filter(([_, inv]: [string, any]) => inv.inviterId === uid)
-            .map(([token, inv]: [string, any]) => ({
-                token,
-                inviteePhone: inv.inviteePhone || "Unknown",
-                message: inv.message,
-                createdAt: inv.createdAt,
-                expiresAt: inv.expiresAt,
-            }));
+        // Get friend requests (filtered queries by `from` / `to`)
+        const sentRaw = await dbQueryByChild("friendRequests", "from", uid);
+        const receivedRaw = await dbQueryByChild("friendRequests", "to", uid);
 
-        // Get friend requests
-        const friendRequestsRef = ref(database, "friendRequests");
-        const friendRequestsSnapshot = await get(friendRequestsRef);
-        const allRequests = friendRequestsSnapshot.val() || {};
+        const sentRequests = Object.values(sentRaw).map((req: any) => ({
+            to: req.to,
+            status: req.status,
+            createdAt: req.createdAt,
+        }));
 
-        const sentRequests = Object.entries(allRequests)
-            .filter(([_, req]: [string, any]) => req.from === uid)
-            .map(([id, req]: [string, any]) => ({
-                to: req.to,
-                status: req.status,
-                createdAt: req.createdAt,
-            }));
-
-        const receivedRequests = Object.entries(allRequests)
-            .filter(([_, req]: [string, any]) => req.to === uid)
-            .map(([id, req]: [string, any]) => ({
-                from: req.from,
-                status: req.status,
-                createdAt: req.createdAt,
-            }));
+        const receivedRequests = Object.values(receivedRaw).map((req: any) => ({
+            from: req.from,
+            status: req.status,
+            createdAt: req.createdAt,
+        }));
 
         return {
             profile: {
@@ -140,49 +149,27 @@ export async function exportUserData(uid: string): Promise<UserDataExport> {
 }
 
 /**
- * Delete user account and all associated data (GDPR compliance)
+ * Delete the account and ALL associated data (GDPR compliance).
+ *
+ * Delegates to the `deleteAccount` Cloud Function, which runs with admin
+ * privileges. This is required for a complete wipe: the security rules prevent
+ * the client from deleting recoveryRequests, invitations addressed to the user,
+ * and block entries other users created — and from deleting its own Auth record
+ * on native. The function identifies the user from their ID token, so a caller
+ * can only delete their own account. (`uid` is kept for call-site compatibility;
+ * the server derives it from the token.)
  */
-export async function deleteAccount(uid: string): Promise<void> {
+export async function deleteAccount(_uid?: string): Promise<void> {
     try {
-        // Delete user profile
-        await remove(ref(database, `users/${uid}`));
-
-        // Delete connections
-        await remove(ref(database, `connections/${uid}`));
-
-        // Delete sent invitations
-        const invitationsRef = ref(database, "invitations");
-        const invitationsSnapshot = await get(invitationsRef);
-        const allInvitations = invitationsSnapshot.val() || {};
-
-        const deletionPromises: Promise<void>[] = [];
-
-        Object.entries(allInvitations).forEach(([token, inv]: [string, any]) => {
-            if (inv.inviterId === uid) {
-                deletionPromises.push(remove(ref(database, `invitations/${token}`)));
-            }
-        });
-
-        // Delete friend requests
-        const friendRequestsRef = ref(database, "friendRequests");
-        const friendRequestsSnapshot = await get(friendRequestsRef);
-        const allRequests = friendRequestsSnapshot.val() || {};
-
-        Object.entries(allRequests).forEach(([id, req]: [string, any]) => {
-            if (req.from === uid || req.to === uid) {
-                deletionPromises.push(remove(ref(database, `friendRequests/${id}`)));
-            }
-        });
-
-        // Wait for all deletions
-        await Promise.all(deletionPromises);
-
-        // Delete Firebase Auth account (must be last)
-        if (auth.currentUser) {
-            await deleteUser(auth.currentUser);
-        }
+        await callFunction("deleteAccount", { withAuth: true });
     } catch (error: any) {
         console.error("Error deleting account:", error);
         throw new Error("Failed to delete account: " + error.message);
+    }
+    // Clear the local/native session so the now-invalid token doesn't linger.
+    try {
+        await signOut();
+    } catch {
+        /* session already gone */
     }
 }
