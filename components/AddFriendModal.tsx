@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { UserPlus, X, Loader2, AlertCircle, MessageSquare, Contact } from "lucide-react";
 import { pickContact, isContactPickerAvailable } from "@/lib/contactPicker";
 import { sendFriendRequest } from "@/lib/firebase/database";
@@ -22,6 +22,18 @@ export default function AddFriendModal({ isOpen, onClose, userUid, userPhone }: 
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error" | "invite_needed" | "pending_reminder">("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [inviteLoading, setInviteLoading] = useState(false);
+
+  // This modal stays mounted (isOpen toggles a null return), so its state would
+  // otherwise persist between opens — leaving you stuck on the previous person's
+  // pending/invite screen when adding someone new. Reset to a clean form on open.
+  useEffect(() => {
+    if (isOpen) {
+      setStatus("idle");
+      setPhoneNumber("");
+      setErrorMessage("");
+      setInviteLoading(false);
+    }
+  }, [isOpen]);
 
   const fallbackCountry = (() => {
     try {
@@ -151,11 +163,11 @@ export default function AddFriendModal({ isOpen, onClose, userUid, userPhone }: 
                     {status === "invite_needed" ? "Invite via SMS" : "Remind via SMS"}
                 </button>
                 
-                <button 
-                    onClick={() => setStatus("idle")}
+                <button
+                    onClick={() => { setStatus("idle"); setPhoneNumber(""); setErrorMessage(""); }}
                     className="w-full text-sm text-muted-foreground hover:text-white py-2"
                 >
-                    Go Back
+                    Add someone else
                 </button>
             </div>
         ) : (
