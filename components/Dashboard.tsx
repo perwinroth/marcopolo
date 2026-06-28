@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { signOut, User } from "@/lib/firebase/auth";
+import { signOut, User, normalizePhoneNumber } from "@/lib/firebase/auth";
 import { useRouter } from "next/navigation";
 import { initNativeNotifications } from "@/lib/firebase/nativeNotifications";
 import AddFriendModal from "./AddFriendModal";
@@ -155,6 +155,18 @@ export default function Dashboard({ user, onSignedOut }: { user: User; onSignedO
     // If friends < 4, we try to fill the screen
     const shouldFillScreen = friends.length > 0 && friends.length <= 3;
 
+    // Don't show (or let you cancel) pending entries for people you're already
+    // connected to — e.g. if they added you while your request was still pending.
+    const connectedIds = new Set(friends.map((f) => f.id).filter(Boolean) as string[]);
+    const connectedPhones = new Set(
+        friends.map((f) => normalizePhoneNumber(f.phone || "")).filter(Boolean)
+    );
+    const visibleSentRequests = sentRequests.filter((r) => !connectedIds.has(r.to));
+    const visibleSentInvitations = sentInvitations.filter((inv) => {
+        const p = normalizePhoneNumber(inv.inviteePhone || "");
+        return !p || !connectedPhones.has(p);
+    });
+
     return (
         <div className="min-h-[100dvh] bg-background relative flex flex-col">
             <AlertMonitor friends={friends} userUid={user.uid} customPolo={user.customPolo} />
@@ -226,13 +238,13 @@ export default function Dashboard({ user, onSignedOut }: { user: User; onSignedO
                 )}
 
                 {/* Pending: requests sent to app users + SMS invites sent to non-users */}
-                {(sentRequests.length > 0 || sentInvitations.length > 0) && (
+                {(visibleSentRequests.length > 0 || visibleSentInvitations.length > 0) && (
                     <div className="space-y-2 mb-4 flex-none">
                         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                             <Clock className="w-4 h-4" />
                             Pending
                         </h2>
-                        {sentRequests.map(req => (
+                        {visibleSentRequests.map(req => (
                             <div
                                 key={req.id}
                                 className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-secondary/40 border border-border/50"
@@ -249,7 +261,7 @@ export default function Dashboard({ user, onSignedOut }: { user: User; onSignedO
                                 </button>
                             </div>
                         ))}
-                        {sentInvitations.map(inv => (
+                        {visibleSentInvitations.map(inv => (
                             <div
                                 key={inv.id}
                                 className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-secondary/40 border border-border/50"

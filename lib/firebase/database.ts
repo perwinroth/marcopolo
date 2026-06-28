@@ -309,6 +309,12 @@ export async function acceptFriendRequest(requestId: string) {
             customPolo: "Polo!",
             theme: defaultTheme,
         });
+        // If the accepter had also sent the other person a request, clear it so it
+        // doesn't linger as "pending" now that they're connected.
+        const reciprocalId = `${request.to}_${request.from}`;
+        if (reciprocalId !== requestId) {
+            try { await dbSet(`friendRequests/${reciprocalId}`, null); } catch { /* ignore */ }
+        }
         return { success: true };
     } catch (error: any) { return { success: false, error: error.message }; }
 }
