@@ -47,6 +47,7 @@ export interface Friend {
 }
 export interface FriendRequest {
     id: string; from: string; fromPhone: string; to: string; toPhone: string;
+    fromDisplayName?: string; toDisplayName?: string;
     status: "pending" | "accepted" | "rejected"; createdAt: number;
 }
 
@@ -230,6 +231,52 @@ export function subscribeToPendingRequests(uid: string, callback: (requests: Fri
     });
 
     return () => off(requestsQuery, "value", unsubscribe);
+}
+
+// Outgoing requests this user has sent that are still awaiting acceptance.
+export function subscribeToSentRequests(uid: string, callback: (requests: FriendRequest[]) => void): Unsubscribe {
+    if (isNative()) {
+        let active = true;
+        (async () => {
+            while (active) {
+                try {
+                    const data = await restDbQueryByChild("friendRequests", "from", uid);
+                    const requests: FriendRequest[] = [];
+                    if (data) {
+                        for (const [key, val] of Object.entries(data as Record<string, any>)) {
+                            if (val.from === uid && val.status === "pending") {
+                                requests.push({ id: key, ...val });
+                            }
+                        }
+                    }
+                    if (active) callback(dedupePendingRequests(requests));
+                } catch (error) {
+                    console.error("Sent requests poll error:", error);
+                }
+                await new Promise((resolve) => setTimeout(resolve, 5000));
+            }
+        })();
+        return () => { active = false; };
+    }
+
+    const requestsQuery = query(ref(database, "friendRequests"), orderByChild("from"), equalTo(uid));
+    const unsubscribe = onValue(requestsQuery, (snapshot) => {
+        const requests: FriendRequest[] = [];
+        snapshot.forEach((child) => {
+            const data = child.val();
+            if (data.status === "pending") {
+                requests.push({ id: child.key as string, ...data });
+            }
+        });
+        callback(dedupePendingRequests(requests));
+    });
+
+    return () => off(requestsQuery, "value", unsubscribe);
+}
+
+// Sender cancels their own outgoing request (rules allow from == auth.uid).
+export async function cancelFriendRequest(requestId: string) {
+    await dbSet(`friendRequests/${requestId}`, null);
 }
 
 export async function acceptFriendRequest(requestId: string) {
