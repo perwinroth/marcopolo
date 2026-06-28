@@ -188,13 +188,17 @@ async function deleteAuthAccount(): Promise<void> {
  */
 export async function deleteAccount(uid: string): Promise<void> {
     try {
-        // Delete user profile
-        await dbRemove(`users/${uid}`);
-
-        // Delete connections (my side)
-        await dbRemove(`connections/${uid}`);
-
         const deletionPromises: Promise<void>[] = [];
+
+        // Delete connections per-child. The security rules only grant write on
+        // connections/$uid/$friendUid (per-child), NOT on the whole
+        // connections/$uid node — so removing the whole node fails with
+        // PERMISSION_DENIED. Also remove the friend's reverse pointer to us.
+        const myConnections = (await dbGet(`connections/${uid}`)) || {};
+        Object.keys(myConnections).forEach((friendUid) => {
+            deletionPromises.push(dbRemove(`connections/${uid}/${friendUid}`));
+            deletionPromises.push(dbRemove(`connections/${friendUid}/${uid}`));
+        });
 
         // Delete sent invitations (filtered query — full-node reads are denied by rules)
         const myInvitations = await dbQueryByChild("invitations", "inviterId", uid);
@@ -212,6 +216,9 @@ export async function deleteAccount(uid: string): Promise<void> {
 
         // Wait for all deletions
         await Promise.all(deletionPromises);
+
+        // Delete the user profile (after connections were read above)
+        await dbRemove(`users/${uid}`);
 
         // Delete Firebase Auth account (must be last)
         await deleteAuthAccount();
