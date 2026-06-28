@@ -9,6 +9,7 @@ import FriendCard from "./FriendCard";
 import SettingsModal from "./SettingsModal";
 import { Friend, subscribeToConnections, subscribeToPendingRequests, subscribeToSentRequests, cancelFriendRequest, updateCustomMessages, acceptFriendRequest, rejectFriendRequest, FriendRequest, sendEmergencySOS, removeConnection } from "@/lib/firebase/database";
 import { Settings, LogOut, Plus, UserPlus, Users, Bell, Clock, HandHelping, RefreshCw, Loader2 } from "lucide-react";
+import { subscribeToSentInvitations, revokeInvitation, type Invitation } from "@/lib/firebase/invitations";
 import FriendRequestNotification from "./FriendRequestNotification";
 import NotificationPermissionBanner from "./NotificationPermissionBanner";
 import { deleteAccount } from "@/lib/firebase/account";
@@ -45,6 +46,7 @@ export default function Dashboard({ user, onSignedOut }: { user: User; onSignedO
     const [friends, setFriends] = useState<Friend[]>([]);
     const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
     const [sentRequests, setSentRequests] = useState<FriendRequest[]>([]);
+    const [sentInvitations, setSentInvitations] = useState<Invitation[]>([]);
     const [loadingFriends, setLoadingFriends] = useState(true);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isAddFriendOpen, setIsAddFriendOpen] = useState(false);
@@ -77,10 +79,15 @@ export default function Dashboard({ user, onSignedOut }: { user: User; onSignedO
             setSentRequests(requests);
         });
 
+        const unsubscribeSentInvitations = subscribeToSentInvitations(user.uid, (invitations) => {
+            setSentInvitations(invitations);
+        });
+
         return () => {
             unsubscribe();
             unsubscribePendingRequests();
             unsubscribeSentRequests();
+            unsubscribeSentInvitations();
             if (watchListener) watchListener.remove();
         };
     }, [user]);
@@ -130,6 +137,11 @@ export default function Dashboard({ user, onSignedOut }: { user: User; onSignedO
         // Optimistically drop it so the list updates instantly (poll/onValue will confirm).
         setSentRequests((prev) => prev.filter((r) => r.id !== requestId));
         await cancelFriendRequest(requestId);
+    };
+
+    const handleCancelInvitation = async (invitationId: string) => {
+        setSentInvitations((prev) => prev.filter((i) => i.id !== invitationId));
+        await revokeInvitation(invitationId);
     };
 
     const handleHelp = async () => {
@@ -213,8 +225,8 @@ export default function Dashboard({ user, onSignedOut }: { user: User; onSignedO
                     </div>
                 )}
 
-                {/* Pending invites you sent */}
-                {sentRequests.length > 0 && (
+                {/* Pending: requests sent to app users + SMS invites sent to non-users */}
+                {(sentRequests.length > 0 || sentInvitations.length > 0) && (
                     <div className="space-y-2 mb-4 flex-none">
                         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                             <Clock className="w-4 h-4" />
@@ -231,6 +243,23 @@ export default function Dashboard({ user, onSignedOut }: { user: User; onSignedO
                                 </div>
                                 <button
                                     onClick={() => handleCancelRequest(req.id)}
+                                    className="text-xs font-medium text-muted-foreground hover:text-destructive px-3 py-2 rounded-lg hover:bg-destructive/10 transition-colors shrink-0"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        ))}
+                        {sentInvitations.map(inv => (
+                            <div
+                                key={inv.id}
+                                className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-secondary/40 border border-border/50"
+                            >
+                                <div className="min-w-0">
+                                    <p className="font-medium truncate">{inv.inviteePhone}</p>
+                                    <p className="text-xs text-muted-foreground">Invited by SMS · waiting to join…</p>
+                                </div>
+                                <button
+                                    onClick={() => handleCancelInvitation(inv.id)}
                                     className="text-xs font-medium text-muted-foreground hover:text-destructive px-3 py-2 rounded-lg hover:bg-destructive/10 transition-colors shrink-0"
                                 >
                                     Cancel

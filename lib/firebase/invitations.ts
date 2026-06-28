@@ -1,4 +1,4 @@
-import { ref, set, get, remove, query, orderByChild, equalTo } from "firebase/database";
+import { ref, set, get, remove, query, orderByChild, equalTo, onValue, off, type Unsubscribe } from "firebase/database";
 import { database, auth } from "./config";
 import { Capacitor } from "@capacitor/core";
 import { normalizePhoneNumber, getNativeUid, restDbGet, restDbSet, restDbQueryByChild } from "./auth";
@@ -126,6 +126,49 @@ export async function createInvitation(
     console.error("Error creating invitation:", error);
     return { success: false, error: error.message };
   }
+}
+
+// Live list of the current user's pending SMS invitations (people not yet on the
+// app that they invited by number). Mirrors the dual-mode subscribe pattern:
+// web onValue, native 5s poll. Filters out used/expired invites.
+export function subscribeToSentInvitations(
+  uid: string,
+  callback: (invitations: Invitation[]) => void
+): Unsubscribe {
+  const collect = (raw: Record<string, any> | null): Invitation[] => {
+    const now = Date.now();
+    const list: Invitation[] = [];
+    if (raw) {
+      for (const [id, inv] of Object.entries(raw)) {
+        if (inv && inv.status === "pending" && (!inv.expiresAt || inv.expiresAt > now)) {
+          list.push({ ...inv, id });
+        }
+      }
+    }
+    return list;
+  };
+
+  if (isNative()) {
+    let active = true;
+    (async () => {
+      while (active) {
+        try {
+          const raw = (await restDbQueryByChild("invitations", "inviterId", uid)) as Record<string, any> | null;
+          if (active) callback(collect(raw));
+        } catch (error) {
+          console.error("Sent invitations poll error:", error);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+    })();
+    return () => { active = false; };
+  }
+
+  const q = query(ref(database, "invitations"), orderByChild("inviterId"), equalTo(uid));
+  const unsub = onValue(q, (snapshot) => {
+    callback(collect(snapshot.exists() ? (snapshot.val() as Record<string, any>) : null));
+  });
+  return () => off(q, "value", unsub);
 }
 
 // Get invitation by token
