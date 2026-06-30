@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { signOut, User, normalizePhoneNumber } from "@/lib/firebase/auth";
+import { signOut, User } from "@/lib/firebase/auth";
+import { filterVisiblePending } from "@/lib/pendingVisibility";
 import { useRouter } from "next/navigation";
 import { initNativeNotifications } from "@/lib/firebase/nativeNotifications";
 import AddFriendModal from "./AddFriendModal";
@@ -157,15 +158,11 @@ export default function Dashboard({ user, onSignedOut }: { user: User; onSignedO
 
     // Don't show (or let you cancel) pending entries for people you're already
     // connected to — e.g. if they added you while your request was still pending.
-    const connectedIds = new Set(friends.map((f) => f.id).filter(Boolean) as string[]);
-    const connectedPhones = new Set(
-        friends.map((f) => normalizePhoneNumber(f.phone || "")).filter(Boolean)
+    const { visibleSentRequests, visibleSentInvitations } = filterVisiblePending(
+        friends,
+        sentRequests,
+        sentInvitations
     );
-    const visibleSentRequests = sentRequests.filter((r) => !connectedIds.has(r.to));
-    const visibleSentInvitations = sentInvitations.filter((inv) => {
-        const p = normalizePhoneNumber(inv.inviteePhone || "");
-        return !p || !connectedPhones.has(p);
-    });
 
     return (
         <div className="min-h-[100dvh] bg-background relative flex flex-col">
