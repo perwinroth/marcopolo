@@ -335,3 +335,60 @@ describe("database native friend requests", () => {
         );
     });
 });
+
+describe("database native pending-request cleanup", () => {
+    beforeEach(() => {
+        vi.resetModules();
+        vi.restoreAllMocks();
+        restDbGetMock.mockReset();
+        restDbQueryByChildMock.mockReset();
+        restDbSetMock.mockReset();
+        restDbUpdateMock.mockReset();
+    });
+
+    it("cancelFriendRequest deletes the request node", async () => {
+        const { cancelFriendRequest } = await import("@/lib/firebase/database");
+        await cancelFriendRequest("user-1_user-2");
+        expect(restDbSetMock).toHaveBeenCalledWith("friendRequests/user-1_user-2", null);
+    });
+
+    it("acceptFriendRequest clears the reciprocal pending request so it doesn't linger", async () => {
+        // Accepting user-2's request to user-1 (id user-2_user-1); user-1 had also
+        // sent user-2 a request (reciprocal id user-1_user-2) which must be removed.
+        restDbGetMock.mockResolvedValueOnce({
+            from: "user-2",
+            to: "user-1",
+            fromPhone: "+46700000002",
+            toPhone: "+46700000001",
+            fromDisplayName: "Two",
+            toDisplayName: "One",
+            status: "pending",
+        });
+
+        const { acceptFriendRequest } = await import("@/lib/firebase/database");
+        const result = await acceptFriendRequest("user-2_user-1");
+
+        expect(result).toEqual({ success: true });
+        // both connection sides created
+        expect(restDbSetMock).toHaveBeenCalledWith("connections/user-2/user-1", expect.any(Object));
+        expect(restDbSetMock).toHaveBeenCalledWith("connections/user-1/user-2", expect.any(Object));
+        // reciprocal outgoing request removed
+        expect(restDbSetMock).toHaveBeenCalledWith("friendRequests/user-1_user-2", null);
+    });
+
+    it("subscribeToSentRequests emits only this user's pending outgoing requests", async () => {
+        restDbQueryByChildMock.mockResolvedValue({
+            "user-1_user-2": { from: "user-1", to: "user-2", status: "pending" },
+            "user-1_user-3": { from: "user-1", to: "user-3", status: "accepted" },
+        });
+        const { subscribeToSentRequests } = await import("@/lib/firebase/database");
+        const emitted: unknown[] = [];
+        const unsub = subscribeToSentRequests("user-1", (reqs) => emitted.push(reqs));
+        await vi.waitFor(() => expect(emitted.length).toBeGreaterThan(0));
+        unsub();
+        expect(restDbQueryByChildMock).toHaveBeenCalledWith("friendRequests", "from", "user-1");
+        const first = emitted[0] as Array<{ id: string; status: string }>;
+        expect(first).toHaveLength(1);
+        expect(first[0]).toMatchObject({ id: "user-1_user-2", status: "pending" });
+    });
+});
