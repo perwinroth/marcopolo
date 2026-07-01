@@ -1,70 +1,73 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const requestPermissionsMock = vi.fn();
-const registerMock = vi.fn();
+const fbRequestPermissionsMock = vi.fn();
+const getTokenMock = vi.fn();
 const addListenerMock = vi.fn();
 const localNotificationPermissionsMock = vi.fn();
+const restDbUpdateMock = vi.fn();
+const getNativeUidMock = vi.fn(() => "user-1");
 
-vi.mock("@capacitor/core", () => ({
-    Capacitor: {
-        isNativePlatform: vi.fn(() => true),
-    },
+vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: vi.fn(() => true) } }));
+
+vi.mock("@capacitor/local-notifications", () => ({
+    LocalNotifications: { requestPermissions: localNotificationPermissionsMock, schedule: vi.fn() },
 }));
 
-vi.mock("@capacitor/push-notifications", () => ({
-    PushNotifications: {
-        checkPermissions: vi.fn(),
-        requestPermissions: requestPermissionsMock,
-        register: registerMock,
+vi.mock("@capacitor-firebase/messaging", () => ({
+    FirebaseMessaging: {
+        requestPermissions: fbRequestPermissionsMock,
+        getToken: getTokenMock,
         addListener: addListenerMock,
     },
 }));
 
-vi.mock("@/lib/firebase/functions", () => ({
-    callFunction: vi.fn().mockResolvedValue({ success: true }),
-}));
-
-vi.mock("@capacitor/local-notifications", () => ({
-    LocalNotifications: {
-        requestPermissions: localNotificationPermissionsMock,
-        schedule: vi.fn(),
-    },
+// nativeNotifications now stores the token via the REST helpers (native path),
+// so mock ./auth to avoid initializing the real Firebase config.
+vi.mock("@/lib/firebase/auth", () => ({
+    getNativeUid: getNativeUidMock,
+    restDbUpdate: restDbUpdateMock,
 }));
 
 describe("native notifications", () => {
-    beforeEach(async () => {
+    beforeEach(() => {
         vi.resetModules();
         vi.restoreAllMocks();
-        requestPermissionsMock.mockReset();
-        registerMock.mockReset();
+        fbRequestPermissionsMock.mockReset();
+        getTokenMock.mockReset();
         addListenerMock.mockReset();
         localNotificationPermissionsMock.mockReset();
+        restDbUpdateMock.mockReset();
+        getNativeUidMock.mockReturnValue("user-1");
     });
 
-    it("initializes local and push permissions on native", async () => {
-        const { PushNotifications } = await import("@capacitor/push-notifications");
-        vi.mocked(PushNotifications.checkPermissions).mockResolvedValue({ receive: "prompt" } as never);
-        requestPermissionsMock.mockResolvedValue({ receive: "granted" });
+    it("registers a real FCM token and stores it on the user record", async () => {
         localNotificationPermissionsMock.mockResolvedValue({ display: "granted" });
+        fbRequestPermissionsMock.mockResolvedValue({ receive: "granted" });
+        getTokenMock.mockResolvedValue({ token: "fcm-token-abc" });
+        addListenerMock.mockResolvedValue({ remove: vi.fn() });
 
         const { initNativeNotifications } = await import("@/lib/firebase/nativeNotifications");
         const result = await initNativeNotifications();
 
         expect(result).toBe(true);
-        expect(addListenerMock).toHaveBeenCalledTimes(3);
-        expect(registerMock).toHaveBeenCalledTimes(1);
+        expect(getTokenMock).toHaveBeenCalled();
+        expect(restDbUpdateMock).toHaveBeenCalledWith(
+            "users/user-1",
+            expect.objectContaining({ fcmToken: "fcm-token-abc", notificationsEnabled: true })
+        );
+        // tokenReceived + notificationReceived listeners
+        expect(addListenerMock).toHaveBeenCalledTimes(2);
     });
 
-    it("returns false when push permissions are denied", async () => {
-        const { PushNotifications } = await import("@capacitor/push-notifications");
-        vi.mocked(PushNotifications.checkPermissions).mockResolvedValue({ receive: "prompt" } as never);
-        requestPermissionsMock.mockResolvedValue({ receive: "denied" });
+    it("returns false and stores no token when notification permission is denied", async () => {
         localNotificationPermissionsMock.mockResolvedValue({ display: "granted" });
+        fbRequestPermissionsMock.mockResolvedValue({ receive: "denied" });
 
         const { initNativeNotifications } = await import("@/lib/firebase/nativeNotifications");
         const result = await initNativeNotifications();
 
         expect(result).toBe(false);
-        expect(registerMock).not.toHaveBeenCalled();
+        expect(getTokenMock).not.toHaveBeenCalled();
+        expect(restDbUpdateMock).not.toHaveBeenCalled();
     });
 });

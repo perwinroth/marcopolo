@@ -3,17 +3,14 @@
  * Triggered by the polling loop when it detects new Marco/help signals
  */
 import { Capacitor } from "@capacitor/core";
-import { PushNotifications, Token } from "@capacitor/push-notifications";
-import { callFunction } from "./functions";
+import { getNativeUid, restDbUpdate } from "./auth";
 import { playIncomingSignalHaptic } from "../haptics";
 import { playSignalHaptics, type SignalPlaybackState } from "../signalAudio";
 import type { SignalType } from "../signals";
 
 let notificationsInitialized = false;
 let notificationIdCounter = 1;
-let pushRegistrationStarted = false;
-let pushRegistrationComplete = false;
-let pushListenerInstalled = false;
+let fcmListenersInstalled = false;
 
 function normalizeSignalType(raw: unknown): SignalType | null {
     const signal = String(raw || "").toLowerCase();
@@ -41,71 +38,65 @@ async function getLocalNotifications() {
     return LocalNotifications;
 }
 
-async function registerNativePushToken(apnsToken: string) {
-    const storedToken = localStorage.getItem("mp_registered_apns_token");
-    if (storedToken === apnsToken) {
-        return;
+// Store the FCM registration token on the user's record so the notification
+// Cloud Function can push to it. Written directly (own-node write, allowed by
+// the security rules on the native REST path) — no legacy APNs->FCM conversion.
+async function storeFcmToken(token: string): Promise<void> {
+    const uid = getNativeUid();
+    if (!uid || !token) return;
+    try {
+        await restDbUpdate(`users/${uid}`, {
+            fcmToken: token,
+            notificationsEnabled: true,
+            lastTokenUpdate: Date.now(),
+        });
+        console.log("📲 FCM token stored for", uid);
+    } catch (error) {
+        console.error("Failed to store FCM token:", error);
     }
-
-    await callFunction<{ success: boolean }>("registerWatch", {
-        body: { apnsToken, bundleId: "co.polomar.app" },
-    });
-    localStorage.setItem("mp_registered_apns_token", apnsToken);
 }
 
-function installPushListeners() {
-    if (pushListenerInstalled) return;
-    pushListenerInstalled = true;
-
-    void PushNotifications.addListener("registration", (token: Token) => {
-        console.log("📲 Native push registration token:", token.value);
-        void registerNativePushToken(token.value).catch((error) => {
-            console.error("Error registering native push token:", error);
-        });
-    });
-
-    void PushNotifications.addListener("registrationError", (error) => {
-        console.error("Native push registration error:", error);
-    });
-
-    void PushNotifications.addListener("pushNotificationReceived", (notification) => {
-        const type = String(notification.data?.type || "").toLowerCase();
-        const signalType = normalizeSignalType(notification.data?.signalType);
-        const signalState = normalizeSignalState(type, notification.data?.signalState);
-        if (signalType && signalState) {
-            void playSignalHaptics(signalType, signalState);
-            return;
-        }
-        if (type === "marco") {
-            void playIncomingSignalHaptic("marco");
-        } else if (type === "polo") {
-            void playIncomingSignalHaptic("polo");
-        } else if (type === "sos") {
-            void playIncomingSignalHaptic("help");
-        }
-    });
+function handleForegroundHaptics(data: Record<string, unknown> | undefined) {
+    const type = String(data?.type || "").toLowerCase();
+    const signalType = normalizeSignalType(data?.signalType);
+    const signalState = normalizeSignalState(type, data?.signalState);
+    if (signalType && signalState) {
+        void playSignalHaptics(signalType, signalState);
+        return;
+    }
+    if (type === "marco") void playIncomingSignalHaptic("marco");
+    else if (type === "polo") void playIncomingSignalHaptic("polo");
+    else if (type === "sos") void playIncomingSignalHaptic("help");
 }
 
 export async function initNativePushNotifications(): Promise<boolean> {
     if (!Capacitor.isNativePlatform()) return false;
 
-    installPushListeners();
+    try {
+        // Get a real FCM registration token directly from the Firebase iOS SDK.
+        // Replaces the dead legacy iid.googleapis.com batchImport conversion.
+        const { FirebaseMessaging } = await import("@capacitor-firebase/messaging");
 
-    const permission = await PushNotifications.checkPermissions();
-    if (permission.receive !== "granted") {
-        const requested = await PushNotifications.requestPermissions();
-        if (requested.receive !== "granted") {
-            return false;
+        const permission = await FirebaseMessaging.requestPermissions();
+        if (permission.receive !== "granted") return false;
+
+        if (!fcmListenersInstalled) {
+            fcmListenersInstalled = true;
+            await FirebaseMessaging.addListener("tokenReceived", (event) => {
+                if (event?.token) void storeFcmToken(event.token);
+            });
+            await FirebaseMessaging.addListener("notificationReceived", (event) => {
+                handleForegroundHaptics(event?.notification?.data as Record<string, unknown> | undefined);
+            });
         }
-    }
 
-    if (!pushRegistrationStarted || !pushRegistrationComplete) {
-        pushRegistrationStarted = true;
-        await PushNotifications.register();
-        pushRegistrationComplete = true;
+        const { token } = await FirebaseMessaging.getToken();
+        if (token) await storeFcmToken(token);
+        return !!token;
+    } catch (error) {
+        console.error("FCM registration error:", error);
+        return false;
     }
-
-    return true;
 }
 
 /**
