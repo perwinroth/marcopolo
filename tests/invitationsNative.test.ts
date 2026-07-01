@@ -83,4 +83,36 @@ describe("invitations (native REST path)", () => {
         expect(res).toEqual({ success: true, token: "existing-token" });
         expect(restDbSetMock).not.toHaveBeenCalled();
     });
+
+    it("accepts an invite created for national format by a user registered as E.164 (last-9 tolerance)", async () => {
+        const mod = await import("@/lib/firebase/invitations");
+        // Invite was created for "0760366102" (national); acceptor registered as "+46760366102".
+        const inviteeHash = await mod.hashPhone("0760366102"); // exact stored hash (WON'T match E.164)
+        const last9Hash = await mod.hashPhone("760366102");     // last-9 tolerant hash (WILL match)
+
+        restDbQueryByChildMock.mockResolvedValueOnce({
+            "inv_1": {
+                token: "tok-1",
+                inviterId: "inviter-1",
+                inviterName: "Alex",
+                inviterPhone: "+46701112233",
+                inviteePhone: "0760366102",
+                inviteePhoneHash: inviteeHash,
+                inviteePhoneLast9Hash: last9Hash,
+                status: "pending",
+                expiresAt: Date.now() + 100000,
+            },
+        });
+        restDbGetMock
+            .mockResolvedValueOnce({ phone: "+46760366102", displayName: "Rita" }) // users/new-user
+            .mockResolvedValueOnce({ token: "tok-1", inviterId: "inviter-1", status: "pending" }); // updateInvitationStatus read
+
+        const result = await mod.acceptInvitation("tok-1", "new-user");
+
+        expect(result.success).toBe(true);
+        expect(result.inviterId).toBe("inviter-1");
+        // both connection sides created
+        expect(restDbSetMock).toHaveBeenCalledWith("connections/inviter-1/new-user", expect.any(Object));
+        expect(restDbSetMock).toHaveBeenCalledWith("connections/new-user/inviter-1", expect.any(Object));
+    });
 });

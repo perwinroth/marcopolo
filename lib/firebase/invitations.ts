@@ -44,6 +44,7 @@ export interface Invitation {
   inviterPhone: string;
   inviteePhone: string;
   inviteePhoneHash: string;
+  inviteePhoneLast9Hash?: string;
   message?: string;
   createdAt: number;
   expiresAt: number;
@@ -72,6 +73,25 @@ function canonicalizePhone(phone: string): string {
   return normalizePhoneNumber(phone);
 }
 
+// The last 9 digits of a phone number are its significant subscriber part —
+// stable across country-code presence and leading-zero differences. Hashing
+// this (in addition to the exact form) makes invite matching tolerant to the
+// same format mismatches that broke friend lookup, without leaking the number.
+function phoneLast9(phone: string): string {
+  const digits = normalizePhoneNumber(phone);
+  return digits.length > 9 ? digits.slice(-9) : digits;
+}
+
+// All hashes that should be accepted as matching this phone.
+async function phoneMatchHashes(phone: string): Promise<string[]> {
+  const forms = new Set<string>();
+  forms.add(canonicalizePhone(phone));
+  forms.add(phone);
+  const last9 = phoneLast9(phone);
+  if (last9) forms.add(last9);
+  return Promise.all([...forms].filter(Boolean).map((f) => hashPhone(f)));
+}
+
 // Create and send invitation
 export async function createInvitation(
   inviteePhone: string,
@@ -91,6 +111,7 @@ export async function createInvitation(
 
     // Check if invitation already exists for this phone
     const phoneHash = await hashPhone(canonicalizePhone(inviteePhone));
+    const phoneLast9Hash = await hashPhone(phoneLast9(inviteePhone));
     const existingInvitation = await getInvitationByPhoneHash(phoneHash);
     if (existingInvitation && existingInvitation.status === "pending") {
       // If pending, return the existing token to avoid duplicates
@@ -112,6 +133,7 @@ export async function createInvitation(
       inviterPhone: userData.phone || "",
       inviteePhone: inviteePhone,
       inviteePhoneHash: phoneHash,
+      inviteePhoneLast9Hash: phoneLast9Hash,
       message: message || "", // Default to empty string if undefined/null
       createdAt: Date.now(),
       expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000), // 7 days
@@ -254,15 +276,16 @@ export async function acceptInvitation(token: string, newUserId: string): Promis
       return { success: false, error: "User phone number is missing" };
     }
 
-    const [canonicalPhoneHash, legacyPhoneHash] = await Promise.all([
-      hashPhone(canonicalizePhone(currentUserPhone)),
-      hashPhone(currentUserPhone),
-    ]);
+    // Build every hash that could match this user's registered phone (exact,
+    // legacy, and the country-code/leading-zero-tolerant last-9 form), and
+    // accept if the invitation's stored hash (exact OR last-9) is among them.
+    const matchHashes = new Set(await phoneMatchHashes(currentUserPhone));
+    const invitationHashes = [invitation.inviteePhoneHash, invitation.inviteePhoneLast9Hash].filter(
+      (h): h is string => !!h
+    );
+    const matches = invitationHashes.some((h) => matchHashes.has(h));
 
-    if (
-      invitation.inviteePhoneHash !== canonicalPhoneHash &&
-      invitation.inviteePhoneHash !== legacyPhoneHash
-    ) {
+    if (!matches) {
       return { success: false, error: "This invitation is for a different phone number" };
     }
     
