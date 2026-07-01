@@ -175,6 +175,11 @@ export default function FriendCard({ friend, onUpdate, userUid, customMarco = "M
         e.stopPropagation();
         if (sentMarco || receivedPolo || isSending || sosSent || sosReceived) return;
 
+        // Clear any in-flight hold first — iOS synthesizes a mouse event after a
+        // touch, which would otherwise start a second timer and orphan the first.
+        if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+
         void primeSignalAudio();
         void startSignalHoldHaptics();
 
@@ -247,6 +252,7 @@ export default function FriendCard({ friend, onUpdate, userUid, customMarco = "M
                 onMouseLeave={stopHolding}
                 onTouchStart={startHolding}
                 onTouchEnd={stopHolding}
+                onTouchCancel={stopHolding}
             >
                 <div
                     className="absolute inset-0 opacity-70 pointer-events-none"
@@ -278,12 +284,13 @@ export default function FriendCard({ friend, onUpdate, userUid, customMarco = "M
                             </div>
                         ) : (
                             <div className="relative z-10">
+                                {/* Base icon — dimmed while holding so the fill below reads clearly */}
                                 <SignalIcon
                                     signal={signalType}
                                     className={iconAnimationClass}
                                     style={{
                                         color: signalColor,
-                                        opacity: 1,
+                                        opacity: isHolding ? 0.28 : 1,
                                         filter: isHolding || isSending ? `drop-shadow(0 0 8px ${signalColor}38)` : undefined,
                                         transform: `translateZ(0) scale(${visualState.holdScale})`,
                                         transformOrigin: "center center",
@@ -292,6 +299,30 @@ export default function FriendCard({ friend, onUpdate, userUid, customMarco = "M
                                         willChange: "transform, filter",
                                     }}
                                 />
+                                {/* Hold-to-send fill: reveals the bright icon bottom-to-top as you hold */}
+                                {isHolding && (
+                                    <div
+                                        className="absolute inset-0"
+                                        aria-hidden="true"
+                                        style={{
+                                            clipPath: `inset(${100 - holdProgress}% 0 0 0)`,
+                                            transition: "clip-path 40ms linear",
+                                        }}
+                                    >
+                                        <SignalIcon
+                                            signal={signalType}
+                                            className={iconAnimationClass}
+                                            style={{
+                                                color: signalColor,
+                                                opacity: 1,
+                                                filter: `drop-shadow(0 0 10px ${signalColor})`,
+                                                transform: `translateZ(0) scale(${visualState.holdScale})`,
+                                                transformOrigin: "center center",
+                                                backfaceVisibility: "hidden",
+                                            }}
+                                        />
+                                    </div>
+                                )}
                             </div>
                         )}
                         {isHolding && (

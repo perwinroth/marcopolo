@@ -10,6 +10,7 @@ import { database } from "./config";
 type GameStatus = "IDLE" | "MARCO" | "POLO" | "SOS" | "MARCO_SENT" | "MARCO_RECEIVED" | "POLO_SENT" | "POLO_RECEIVED" | "SOS_SENT" | "SOS_RECEIVED";
 import { Capacitor } from "@capacitor/core";
 import { normalizePhoneNumber, restDbGet, restDbPush, restDbQueryByChild, restDbSet, restDbUpdate } from "./auth";
+import { parsePhoneNumberFromString } from "libphonenumber-js";
 import { notifyMarcoReceived, notifyPoloReceived, notifySOSReceived } from "./nativeNotifications";
 import { DEFAULT_SIGNAL_COLOR, DEFAULT_SIGNAL_TYPE, mapLegacyShapeToSignal, type SignalType } from "../signals";
 
@@ -71,6 +72,26 @@ function arePhoneNumbersEquivalent(p1: string, p2: string): boolean {
     return n1.length >= 7 && n2.length >= 7 && (n1.endsWith(n2) || n2.endsWith(n1));
 }
 
+// Build the set of `phoneNormalized` values to query when looking up a user.
+// The stored value is E.164 digits (e.g. 46760366102), but a typed/picked number
+// may be national (e.g. 0760366102) — so an exact match alone misses real users.
+// We add an E.164-canonicalized form using the requester's country as the default
+// region, so same-country contacts entered in local format still resolve.
+function phoneQueryCandidates(toPhone: string, fromPhone: string): string[] {
+    const forms = new Set<string>();
+    const exact = normalizePhoneNumber(toPhone);
+    if (exact) forms.add(exact);
+    try {
+        const fromCountry = parsePhoneNumberFromString(fromPhone || "")?.country;
+        const canonical = parsePhoneNumberFromString(toPhone || "", fromCountry)?.number; // E.164
+        if (canonical) {
+            const normalized = normalizePhoneNumber(canonical);
+            if (normalized) forms.add(normalized);
+        }
+    } catch { /* parsing is best-effort */ }
+    return [...forms];
+}
+
 // Block/unblock a user
 export async function blockUser(uid: string, blockedUid: string) {
     try {
@@ -97,31 +118,36 @@ export async function getBlockedUsers(uid: string): Promise<string[]> {
 
 export async function sendFriendRequest(fromUid: string, fromPhone: string, toPhone: string) {
     try {
-        const normalizedPhone = normalizePhoneNumber(toPhone);
+        const candidates = phoneQueryCandidates(toPhone, fromPhone);
         let toUid: string | null = null;
         let targetUserPhone = toPhone;
         let targetDisplayName = "";
 
-        if (isNative()) {
-            const usersData = await restDbQueryByChild("users", "phoneNormalized", normalizedPhone);
-            if (usersData) {
-                const [uid, userData] = Object.entries(usersData as Record<string, any>)[0] || [];
-                if (uid && userData?.phone && arePhoneNumbersEquivalent(userData.phone, toPhone)) {
-                    toUid = uid;
-                    targetUserPhone = userData.phone;
-                    targetDisplayName = userData.displayName || userData.name || "";
+        for (const form of candidates) {
+            if (toUid) break;
+            if (isNative()) {
+                const usersData = await restDbQueryByChild("users", "phoneNormalized", form);
+                if (usersData) {
+                    for (const [uid, userData] of Object.entries(usersData as Record<string, any>)) {
+                        if (uid && userData?.phone && arePhoneNumbersEquivalent(userData.phone, toPhone)) {
+                            toUid = uid;
+                            targetUserPhone = userData.phone;
+                            targetDisplayName = userData.displayName || userData.name || "";
+                            break;
+                        }
+                    }
                 }
+            } else {
+                const snapshot = await get(query(ref(database, "users"), orderByChild("phoneNormalized"), equalTo(form)));
+                snapshot.forEach((child) => {
+                    const userData = child.val();
+                    if (!toUid && userData?.phone && arePhoneNumbersEquivalent(userData.phone, toPhone)) {
+                        toUid = child.key;
+                        targetUserPhone = userData.phone;
+                        targetDisplayName = userData.displayName || userData.name || "";
+                    }
+                });
             }
-        } else {
-            const snapshot = await get(query(ref(database, "users"), orderByChild("phoneNormalized"), equalTo(normalizedPhone)));
-            snapshot.forEach((child) => {
-                const userData = child.val();
-                if (!toUid && userData?.phone && arePhoneNumbersEquivalent(userData.phone, toPhone)) {
-                    toUid = child.key;
-                    targetUserPhone = userData.phone;
-                    targetDisplayName = userData.displayName || userData.name || "";
-                }
-            });
         }
 
         if (!toUid) return { success: false, error: "User not found" };
