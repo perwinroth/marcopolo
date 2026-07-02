@@ -91,6 +91,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WCSessionDelegate, UNUser
                 if let rt = defaults.string(forKey: "CapacitorStorage.mp_native_refreshToken") {
                     reply["refreshToken"] = rt
                 }
+                // Include apiKey so the watch can refresh its own token even if the
+                // queued transferUserInfo/applicationContext channels haven't landed yet.
+                if let plistPath = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
+                   let plist = NSDictionary(contentsOfFile: plistPath),
+                   let apiKey = plist["API_KEY"] as? String {
+                    reply["apiKey"] = apiKey
+                }
                 replyHandler(reply)
                 let refreshToken = defaults.string(forKey: "CapacitorStorage.mp_native_refreshToken")
                 sendAuthToWatch(uid: uid, token: token, refreshToken: refreshToken)

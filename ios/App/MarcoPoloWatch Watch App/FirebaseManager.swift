@@ -25,8 +25,7 @@ class FirebaseManager: ObservableObject {
     private var timer: Timer?
     
     private let databaseURL = "https://marcopolo-3fa43-default-rtdb.europe-west1.firebasedatabase.app"
-    private let firebaseApiKey = "AIzaSyBxxxxxxx" // Will be read from stored value
-    
+
     private init() {
         if uid != nil && token != nil {
             isAuthenticated = true
